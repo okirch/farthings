@@ -1,0 +1,179 @@
+#!/usr/bin/python3
+#
+# Test script for shadow utils
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+from susetest.resources import ExecutableResource
+
+@susetest.resource
+class Utility_chfn(ExecutableResource):
+	name = "chfn"
+	selinux_label_domain = "chfn_exec_t"
+	selinux_process_domain = "chfn_t"
+	interactive = True
+
+@susetest.resource
+class Utility_chsh(ExecutableResource):
+	name = "chsh"
+	selinux_label_domain = "chfn_exec_t"
+	selinux_process_domain = "chfn_t"
+	interactive = True
+
+@susetest.resource
+class Utility_passwd(ExecutableResource):
+	name = "passwd"
+	selinux_label_domain = "passwd_exec_t"
+	selinux_process_domain = "passwd_t"
+	interactive = True
+
+@susetest.test
+def verify_chfn(driver):
+	'''shadow.chfn: check if test user can change GECOS information'''
+	node = driver.client
+	user = node.getResource("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	if not user.uid:
+		node.logFailure("user %s: password not known" % user.login)
+		return
+
+	chat_script = [
+		["assword: ", user.password],
+	]
+
+	st = node.runChatScript("chfn --room 123", chat_script, timeout = 10, user = user.login)
+	if st is None:
+		return
+
+	if not st:
+		node.logFailure("chfn command exited with error")
+		return
+
+	st = node.run("grep '^%s:' /etc/passwd" % user.login, stdout = bytearray())
+	if not st:
+		node.logFailure("Could not find user %s in /etc/passwd" % user.login)
+		return
+
+	gecos = st.stdoutString.split(':')
+	if len(gecos) < 5:
+		node.logFailure("Could not parse /etc/passwd entry for user %s" % user.login)
+		return
+
+	gecos_fields = gecos[4].split(',')
+	if len(gecos_fields) < 2:
+		node.logFailure("Bad number of GECOS fields for user %s" % user.login)
+		return
+
+	if gecos_fields[1] != '123':
+		node.logFailure("Apparently, we failed to change the user info for %s." % user.login)
+		return
+
+	node.logInfo("OK, GECOS field was changed to include the phone number 123")
+
+def expect_process_selinux_domain(node, proc, user = "unconfined_u", role = "unconfined_r", domain = "unconfined_t", mcs = "s0"):
+	# Insert a minor delay to allow the the server to exec
+	# the application, and have it transition to the expected context
+	time.sleep(0.5)
+
+	process_ctx = proc.selinux_context
+
+	if proc.pid != 0:
+		proc.kill("KILL")
+
+	expected = "%s:%s:%s:%s" % (user, role, domain, mcs)
+
+	if process_ctx != expected:
+		node.logFailure("command is running with wrong SELinux context");
+		node.logInfo("  expected %s" % expected)
+		node.logInfo("  actual context %s" % process_ctx)
+		return False
+
+	node.logInfo("good, command is running with expected SELinux context %s" % expected);
+	return True
+
+def test_command_selinux_domain(node, cmdstring, **kwargs):
+	if 'selinux' not in node.features:
+		driver.skipTest()
+		return
+
+	user = node.getResource("test-user")
+	if not user.uid:
+		node.logError("user %s does not seem to exist" % user.login)
+		return
+
+	import twopence
+	# twopence.setDebugLevel(5)
+	cmd = twopence.Command(cmdstring, timeout = 10, user = user.login, background = True)
+	# awkward
+	# cmd.useTty = True
+
+	proc = node.chat(cmd)
+	if not proc:
+		node.logFailure("failed to start command \"%s\"" % cmdstring)
+		return
+
+	# twopence.setDebugLevel(0)
+	expect_process_selinux_domain(node, proc, **kwargs)
+	proc.wait()
+
+
+@susetest.test
+def verify_passwd(driver):
+	'''shadow.passwd: check if test user can change password'''
+	new_password = "$up3r/3l1t3/PAssw0rd"
+
+	node = driver.client
+	user = node.getResource("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	if not user.uid:
+		node.logFailure("user %s: password not known" % user.login)
+		return
+
+	node.logInfo("backing up shadow file")
+	node.run("ln /etc/shadow /etc/shadow.twopence")
+
+	chat_script = [
+		["urrent password: ", user.password],
+		["ew password: ", new_password],
+		["password: ", new_password],
+	]
+
+	st = node.runChatScript("passwd", chat_script, timeout = 10, user = user.login)
+	if st is None:
+		node.logError("unable to run passwd command")
+	elif not st:
+		node.logFailure("passwd command exited with error")
+	else:
+		pass
+	
+	node.run("mv /etc/shadow.twopence /etc/shadow")
+	node.logInfo("restored shadow file")
+
+@susetest.requires('selinux')
+@susetest.test
+def verify_passwd_selinux(driver):
+	'''selinux.passwd: verify that selinux policy is applied to passwd'''
+	susetest.verifySELinuxPolicy(driver.client, "passwd")
+
+@susetest.requires('selinux')
+@susetest.test
+def verify_chsh_selinux(driver):
+	'''selinux.chsh: verify that selinux policy is applied to chsh'''
+	susetest.verifySELinuxPolicy(driver.client, "chsh")
+
+@susetest.requires('selinux')
+@susetest.test
+def verify_chfn_selinux(driver):
+	'''selinux.chfn: verify that selinux policy is applied to chfn'''
+	susetest.verifySELinuxPolicy(driver.client, "chfn")
+
+
+if __name__ == '__main__':
+	susetest.perform()
