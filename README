@@ -5,3 +5,43 @@ with twopence.
 
 A farthing is a quarter of a pence, or an eighth of a twopence.
 Pretty small change :-)
+
+To run these tests, you need these projects from
+https://github.com/okirch:
+
+ - twopence
+ 	This is a low-level library and server that helps
+	with accessing systems under test
+
+ - susetest
+	Primarily a collection of higher-level python bindings that help
+	with writing test scripts
+
+ - twopence-provision
+ 	Scripts for provisioning test nodes according to
+	test metadata.
+
+ - farthing
+ 	The repository you're currently looking at, containing
+	a number of test cases
+
+
+The simplest way to run a test is
+
+  twopence run-test --platform <platform> <name>
+
+	This will provision the required topology (currently as
+	vagrant nodes), run test indicated test, and tear
+	down the topology.
+
+	The test report will be stored below ~/susetest/logs
+
+	run-test supports several additional command line options. A
+	rather useful one may be --interactive, which stops after
+	each step, allowing the user to connect a test node,
+	etc.
+
+Available platforms can be displayed using
+
+  twopence list-platforms
+
