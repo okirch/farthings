@@ -1,0 +1,104 @@
+#!/usr/bin/python3
+#
+# Test script for shadow utils
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+from susetest.resources import ExecutableResource
+
+@susetest.resource
+class Utility_sudo(ExecutableResource):
+	name = "sudo"
+	selinux_label_domain = "sudo_exec_t"
+	selinux_process_domain = "sudo_t"
+	interactive = False
+
+@susetest.test
+def verify_rootpass(driver):
+	'''sudo.rootpass: verify sudo with root password'''
+	node = driver.client
+
+	root = node.requireResource("root-user")
+	if not root:
+		node.logError("Cannot find resource root-user")
+		return
+	if not root.forcePassword():
+		return
+
+	user = node.getResource("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	chat_script = [
+		["password for root:", root.password],
+	]
+
+	node.run("sudo -k", user = user.login)
+
+	node.logInfo("sudo should ask for root password on first attempt")
+	st = node.runChatScript("sudo true", chat_script, timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("sudo with root passwd failed")
+		return
+
+	node.logInfo("sudo should ask accept user without password on second attempt")
+	st = node.run("sudo -S true", timeout = 10, user = user.login, stdin = bytearray())
+	if not st:
+		node.logFailure("sudo with cached credentials failed")
+		return
+
+	node.logInfo("remove cached credentials for %s" % user.login)
+	st = node.run("sudo -k", timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("sudo -k command exited with error")
+		return
+
+	node.logInfo("after clearing credentials, sudo should ask for password again")
+	st = node.runChatScript("sudo true", chat_script, timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("sudo with root passwd failed")
+		return
+
+	node.logInfo("remove cached credentials for %s" % user.login)
+	st = node.run("sudo -k", timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("sudo -k command exited with error")
+		return
+
+	node.logInfo("OKAY, this seems to work as expected")
+
+@susetest.test
+def verify_sudoer(driver):
+	'''sudo.sudoer: verify sudo with sudoer entry'''
+	node = driver.client
+
+	user = node.getResource("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	username = user.login
+	node.sendbuffer("/etc/sudoers.d/" + username,
+			"%s ALL=(ALL) NOPASSWD: ALL" % username, user = "root")
+
+	node.run("cat /etc/sudoers.d/testuser", user = "root")
+
+	node.logInfo("sudo should not ask for password")
+	st = node.run("sudo true", timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("sudo with sudoer failed")
+	else:
+		node.logInfo("OKAY, this seems to work as expected")
+
+	node.run("rm -f /etc/sudoers.d/testuser", user = "root")
+
+@susetest.requires('selinux')
+@susetest.test
+def verify_sudo_selinux(driver):
+	'''selinux.sudo: verify that selinux policy is applied to passwd'''
+	susetest.verifySELinuxPolicy(driver.client, "sudo")
+
+if __name__ == '__main__':
+	susetest.perform()
