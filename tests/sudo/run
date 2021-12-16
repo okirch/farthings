@@ -97,7 +97,7 @@ def verify_sudoer(driver):
 @susetest.requires('selinux')
 @susetest.test
 def verify_sudo_selinux(driver):
-	'''selinux.sudo: verify that selinux policy is applied to passwd'''
+	'''selinux.sudo: verify that selinux policy is applied to sudo'''
 	susetest.verifySELinuxPolicy(driver.client, "sudo")
 
 if __name__ == '__main__':
