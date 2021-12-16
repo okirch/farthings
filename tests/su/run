@@ -1,0 +1,62 @@
+#!/usr/bin/python3
+#
+# Test script for shadow utils
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+from susetest.resources import ExecutableResource
+
+@susetest.resource
+class Utility_su(ExecutableResource):
+	name = "su"
+	selinux_label_domain = "su_exec_t"
+	selinux_process_domain = "su_t"
+	interactive = False
+
+@susetest.test
+def verify_rootpass(driver):
+	'''su.rootpass: verify su with root password'''
+	node = driver.client
+
+	root = node.requireResource("root-user")
+	if not root:
+		node.logError("Cannot find resource root-user")
+		return
+	if not root.forcePassword():
+		return
+
+	user = node.getResource("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	chat_script = [
+		["Password:", root.password],
+	]
+
+	st = node.runChatScript("su -c 'echo works'", chat_script, timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("su with root passwd failed")
+		return
+
+	chat_script = [
+		["Password:", root.password],
+		["# ", "exit"],
+	]
+
+	st = node.runChatScript("su -", chat_script, timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("su with root passwd failed")
+		return
+
+	node.logInfo("OKAY, this seems to work as expected")
+
+@susetest.requires('selinux')
+@susetest.test
+def verify_su_selinux(driver):
+	'''selinux.su: verify that selinux policy is applied to su'''
+	susetest.verifySELinuxPolicy(driver.client, "su")
+
+if __name__ == '__main__':
+	susetest.perform()
