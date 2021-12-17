@@ -5,14 +5,6 @@
 # Copyright (C) 2021 Olaf Kirch <okir@suse.de>
 
 import susetest
-from susetest.resources import ExecutableResource
-
-@susetest.resource
-class Utility_su(ExecutableResource):
-	name = "su"
-	selinux_label_domain = "su_exec_t"
-	selinux_process_domain = "su_t"
-	interactive = False
 
 @susetest.test
 def verify_rootpass(driver):
@@ -52,11 +44,8 @@ def verify_rootpass(driver):
 
 	node.logInfo("OKAY, this seems to work as expected")
 
-@susetest.requires('selinux')
-@susetest.test
-def verify_su_selinux(driver):
-	'''selinux.su: verify that selinux policy is applied to su'''
-	susetest.verifySELinuxPolicy(driver.client, "su")
+# boilerplate tests
+susetest.template('selinux-verify-resource', 'su')
 
 if __name__ == '__main__':
 	susetest.perform()

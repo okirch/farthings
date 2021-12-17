@@ -5,28 +5,6 @@
 # Copyright (C) 2021 Olaf Kirch <okir@suse.de>
 
 import susetest
-from susetest.resources import ExecutableResource
-
-@susetest.resource
-class Utility_chfn(ExecutableResource):
-	name = "chfn"
-	selinux_label_domain = "chfn_exec_t"
-	selinux_process_domain = "chfn_t"
-	interactive = True
-
-@susetest.resource
-class Utility_chsh(ExecutableResource):
-	name = "chsh"
-	selinux_label_domain = "chfn_exec_t"
-	selinux_process_domain = "chfn_t"
-	interactive = True
-
-@susetest.resource
-class Utility_passwd(ExecutableResource):
-	name = "passwd"
-	selinux_label_domain = "passwd_exec_t"
-	selinux_process_domain = "passwd_t"
-	interactive = True
 
 @susetest.test
 def verify_chfn(driver):
@@ -109,23 +87,10 @@ def verify_passwd(driver):
 	node.run("mv /etc/shadow.twopence /etc/shadow")
 	node.logInfo("restored shadow file")
 
-@susetest.requires('selinux')
-@susetest.test
-def verify_passwd_selinux(driver):
-	'''selinux.passwd: verify that selinux policy is applied to passwd'''
-	susetest.verifySELinuxPolicy(driver.client, "passwd")
-
-@susetest.requires('selinux')
-@susetest.test
-def verify_chsh_selinux(driver):
-	'''selinux.chsh: verify that selinux policy is applied to chsh'''
-	susetest.verifySELinuxPolicy(driver.client, "chsh")
-
-@susetest.requires('selinux')
-@susetest.test
-def verify_chfn_selinux(driver):
-	'''selinux.chfn: verify that selinux policy is applied to chfn'''
-	susetest.verifySELinuxPolicy(driver.client, "chfn")
+# boilerplate tests
+susetest.template('selinux-verify-resource', 'passwd')
+susetest.template('selinux-verify-resource', 'chsh')
+susetest.template('selinux-verify-resource', 'chfn')
 
 
 if __name__ == '__main__':

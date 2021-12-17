@@ -5,14 +5,6 @@
 # Copyright (C) 2021 Olaf Kirch <okir@suse.de>
 
 import susetest
-from susetest.resources import ExecutableResource
-
-@susetest.resource
-class Utility_sudo(ExecutableResource):
-	name = "sudo"
-	selinux_label_domain = "sudo_exec_t"
-	selinux_process_domain = "sudo_t"
-	interactive = False
 
 @susetest.test
 def verify_rootpass(driver):
@@ -94,11 +86,9 @@ def verify_sudoer(driver):
 
 	node.run("rm -f /etc/sudoers.d/testuser", user = "root")
 
-@susetest.requires('selinux')
-@susetest.test
-def verify_sudo_selinux(driver):
-	'''selinux.sudo: verify that selinux policy is applied to sudo'''
-	susetest.verifySELinuxPolicy(driver.client, "sudo")
+# boilerplate tests
+susetest.template('selinux-verify-resource', 'sudo')
+
 
 if __name__ == '__main__':
 	susetest.perform()
