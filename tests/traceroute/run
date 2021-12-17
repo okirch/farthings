@@ -1,0 +1,14 @@
+#!/usr/bin/python3
+#
+# Test script for traceroute utils
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+
+# boilerplate tests
+susetest.template('selinux-verify-resource', 'traceroute')
+susetest.template('selinux-verify-resource', 'traceroute6')
+
+if __name__ == '__main__':
+	susetest.perform()
