@@ -10,7 +10,7 @@ import susetest
 def verify_chfn(driver):
 	'''shadow.chfn: check if test user can change GECOS information'''
 	node = driver.client
-	user = node.getResource("test-user")
+	user = node.requireUser("test-user")
 	if not user.uid:
 		node.logFailure("user %s does not seem to exist" % user.login)
 		return
@@ -58,7 +58,7 @@ def verify_passwd(driver):
 	new_password = "$up3r/3l1t3/PAssw0rd"
 
 	node = driver.client
-	user = node.getResource("test-user")
+	user = node.requireUser("test-user")
 	if not user.uid:
 		node.logFailure("user %s does not seem to exist" % user.login)
 		return
@@ -88,9 +88,9 @@ def verify_passwd(driver):
 	node.logInfo("restored shadow file")
 
 # boilerplate tests
-susetest.template('selinux-verify-resource', 'passwd')
-susetest.template('selinux-verify-resource', 'chsh')
-susetest.template('selinux-verify-resource', 'chfn')
+susetest.template('selinux-verify-executable', 'passwd')
+susetest.template('selinux-verify-executable', 'chsh')
+susetest.template('selinux-verify-executable', 'chfn')
 
 
 if __name__ == '__main__':

@@ -30,13 +30,6 @@
 from susetest.resources import ServiceResource
 import susetest
 
-@susetest.resource
-class RpcbindServiceResource(ServiceResource):
-        name = "rpcbind"
-        daemon_path = "/sbin/rpcbind"
-        systemd_unit = "rpcbind.service"
-        systemd_activate = ["rpcbind.socket"]
-
 susetest.requireResource("ipv4_address")
 susetest.optionalResource("ipv6_address")
 
@@ -46,7 +39,7 @@ def setup(driver):
 	global rpcbind, rpcinfo, square_daemon, square_client
 
 	# Enable rpcbind on the server
-	rpcbind = driver.requireResource("rpcbind", "server")
+	rpcbind = driver.requireService("rpcbind", "server")
 
 	# Locate rpcinfo on the client
 	rpcinfo = driver.client.requireExecutable("rpcinfo")
@@ -192,7 +185,7 @@ def rpc_square_server(driver):
 def verify_chfn(driver):
 	'''shadow.chfn: check if test user can change GECOS information'''
 	node = driver.client
-	user = node.getResource("test-user")
+	user = node.requireUser("test-user")
 	if not user.uid:
 		node.logFailure("user %s does not seem to exist" % user.login)
 		return
@@ -240,7 +233,7 @@ def verify_passwd(driver):
 	new_password = "$up3r/3l1t3/PAssw0rd"
 
 	node = driver.client
-	user = node.getResource("test-user")
+	user = node.requireUser("test-user")
 	if not user.uid:
 		node.logFailure("user %s does not seem to exist" % user.login)
 		return

@@ -7,8 +7,9 @@
 import susetest
 
 # boilerplate tests
-susetest.template('selinux-verify-resource', 'traceroute')
-susetest.template('selinux-verify-resource', 'traceroute6')
+susetest.template('selinux-verify-executable', 'traceroute')
+# traceroute6 is usually a link to traceroute
+#susetest.template('selinux-verify-executable', 'traceroute6')
 
 if __name__ == '__main__':
 	susetest.perform()

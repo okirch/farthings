@@ -18,7 +18,7 @@ def verify_rootpass(driver):
 	if not root.forcePassword():
 		return
 
-	user = node.getResource("test-user")
+	user = node.requireUser("test-user")
 	if not user.uid:
 		node.logFailure("user %s does not seem to exist" % user.login)
 		return
@@ -45,7 +45,7 @@ def verify_rootpass(driver):
 	node.logInfo("OKAY, this seems to work as expected")
 
 # boilerplate tests
-susetest.template('selinux-verify-resource', 'su')
+susetest.template('selinux-verify-executable', 'su')
 
 if __name__ == '__main__':
 	susetest.perform()

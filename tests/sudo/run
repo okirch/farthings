@@ -18,7 +18,7 @@ def verify_rootpass(driver):
 	if not root.forcePassword():
 		return
 
-	user = node.getResource("test-user")
+	user = node.requireUser("test-user")
 	if not user.uid:
 		node.logFailure("user %s does not seem to exist" % user.login)
 		return
@@ -66,7 +66,7 @@ def verify_sudoer(driver):
 	'''sudo.sudoer: verify sudo with sudoer entry'''
 	node = driver.client
 
-	user = node.getResource("test-user")
+	user = node.requireUser("test-user")
 	if not user.uid:
 		node.logFailure("user %s does not seem to exist" % user.login)
 		return
@@ -87,7 +87,7 @@ def verify_sudoer(driver):
 	node.run("rm -f /etc/sudoers.d/testuser", user = "root")
 
 # boilerplate tests
-susetest.template('selinux-verify-resource', 'sudo')
+susetest.template('selinux-verify-executable', 'sudo')
 
 
 if __name__ == '__main__':
