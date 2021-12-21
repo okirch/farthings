@@ -6,85 +6,149 @@
 
 import susetest
 
+class SudoState:
+	_instance = None
+
+	@classmethod
+	def instance(klass, driver):
+		if klass._instance is None or klass._instance.driver is not driver:
+			instance = klass(driver)
+			if not instance.initialize():
+				return None
+			klass._instance = instance
+		return klass._instance
+
+	def __init__(self, driver):
+		self.driver = driver
+
+	def initialize(self):
+		node = self.driver.client
+		self.node = node
+
+		self.logInfo = node.logInfo
+
+		root = node.requireUser("root-user")
+		if not root:
+			node.logError("Cannot find resource root-user")
+			return
+		# Set the root password, brute force (sed -i 'blah' /etc/shadow)
+		if not root.forcePassword():
+			return
+		self.root = root
+
+		user = node.requireUser("test-user")
+		if not user.uid:
+			node.logFailure("user %s does not seem to exist" % user.login)
+			return
+		self.user = user
+
+		return True
+
+	@property
+	def root_password(self):
+		return self.root.password
+
+	@property
+	def test_user(self):
+		return self.user.login
+
+	def sudoResetTimestamp(self):
+		node = self.node
+
+		node.logInfo("remove cached credentials for %s" % self.test_user)
+		st = node.run("sudo -k", user = self.test_user)
+		if not st:
+			node.logFailure("sudo -k failed: %s" % st.message)
+			return False
+
+		return True
+
+	def runSudoWithPassword(self, cmd):
+		chat_script = [
+			["password for root:", self.root_password],
+		]
+
+		node = self.node
+		st = node.runChatScript("sudo %s" % cmd, chat_script, timeout = 10, user = self.test_user, tty = True)
+		if not st:
+			node.logFailure("sudo with root passwd failed: %s" % st.message)
+			return False
+
+		return True
+
+	def runSudoWithoutPassword(self, cmd):
+		input = bytearray("bad\n".encode('utf-8'))
+		st = self.node.run("sudo %s" % cmd, timeout = 10, user = self.test_user, stdin = input, tty = True)
+		if not st:
+			self.node.logFailure("sudo with cached credentials failed: %s" % st.message)
+			return False
+
+		return True
+
 @susetest.test
 def verify_rootpass(driver):
 	'''sudo.rootpass: verify sudo with root password'''
-	node = driver.client
+	state = SudoState.instance(driver)
+	node = state.node
 
-	root = node.requireResource("root-user")
-	if not root:
-		node.logError("Cannot find resource root-user")
-		return
-	if not root.forcePassword():
-		return
+	state.sudoResetTimestamp()
 
-	user = node.requireUser("test-user")
-	if not user.uid:
-		node.logFailure("user %s does not seem to exist" % user.login)
+	state.logInfo("sudo should ask for root password on first attempt")
+	if not state.runSudoWithPassword("true"):
 		return
 
-	chat_script = [
-		["password for root:", root.password],
-	]
+	state.logInfo("OKAY, this seems to work as expected")
 
-	node.run("sudo -k", user = user.login)
+@susetest.test
+def verify_cachedcreds(driver):
+	'''sudo.cachedcreds: verify that sudo caches credentials'''
+	state = SudoState.instance(driver)
 
-	node.logInfo("sudo should ask for root password on first attempt")
-	st = node.runChatScript("sudo true", chat_script, timeout = 10, user = user.login)
-	if not st:
-		node.logFailure("sudo with root passwd failed")
+	state.logInfo("sudo should accept user without password on second attempt")
+	if not state.runSudoWithPassword("true && sleep 1 && sudo true"):
 		return
 
-	node.logInfo("sudo should ask accept user without password on second attempt")
-	st = node.run("sudo -S true", timeout = 10, user = user.login, stdin = bytearray())
-	if not st:
-		node.logFailure("sudo with cached credentials failed")
+	state.logInfo("OKAY, this seems to work as expected")
+
+@susetest.test
+def verify_clearcreds(driver):
+	'''sudo.clearcreds: verify that we can clear cached sudo credentials'''
+	state = SudoState.instance(driver)
+
+	state.sudoResetTimestamp()
+
+	state.logInfo("after clearing credentials, sudo should ask for password again")
+	if not state.runSudoWithPassword("true"):
 		return
 
-	node.logInfo("remove cached credentials for %s" % user.login)
-	st = node.run("sudo -k", timeout = 10, user = user.login)
-	if not st:
-		node.logFailure("sudo -k command exited with error")
+	if not state.sudoResetTimestamp():
 		return
 
-	node.logInfo("after clearing credentials, sudo should ask for password again")
-	st = node.runChatScript("sudo true", chat_script, timeout = 10, user = user.login)
-	if not st:
-		node.logFailure("sudo with root passwd failed")
-		return
-
-	node.logInfo("remove cached credentials for %s" % user.login)
-	st = node.run("sudo -k", timeout = 10, user = user.login)
-	if not st:
-		node.logFailure("sudo -k command exited with error")
-		return
-
-	node.logInfo("OKAY, this seems to work as expected")
+	state.logInfo("OKAY, this seems to work as expected")
 
 @susetest.test
 def verify_sudoer(driver):
 	'''sudo.sudoer: verify sudo with sudoer entry'''
-	node = driver.client
+	state = SudoState.instance(driver)
+	node = state.node
 
-	user = node.requireUser("test-user")
-	if not user.uid:
-		node.logFailure("user %s does not seem to exist" % user.login)
-		return
+	username = state.test_user
+	sudoerPath = "/etc/sudoers.d/" + username
 
-	username = user.login
-	node.sendbuffer("/etc/sudoers.d/" + username,
-			"%s ALL=(ALL) NOPASSWD: ALL" % username, user = "root")
+	node.sendbuffer(sudoerPath,
+			"%s ALL=(ALL) NOPASSWD: ALL" % username,
+			user = "root")
 
-	node.run("cat /etc/sudoers.d/testuser", user = "root")
+	node.run("cat " + sudoerPath, user = "root")
 
 	node.logInfo("sudo should not ask for password")
-	st = node.run("sudo true", timeout = 10, user = user.login)
+	st = node.run("sudo true", timeout = 10, user = username)
 	if not st:
 		node.logFailure("sudo with sudoer failed")
 	else:
 		node.logInfo("OKAY, this seems to work as expected")
 
-	node.run("rm -f /etc/sudoers.d/testuser", user = "root")
+	node.run("rm -f " + sudoerPath, user = "root")
 
 # boilerplate tests
 susetest.template('selinux-verify-executable', 'sudo')
