@@ -11,7 +11,7 @@ def verify_rootpass(driver):
 	'''su.rootpass: verify su with root password'''
 	node = driver.client
 
-	root = node.requireResource("root-user")
+	root = node.requireUser("root-user")
 	if not root:
 		node.logError("Cannot find resource root-user")
 		return
