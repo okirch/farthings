@@ -6,6 +6,67 @@
 
 import susetest
 
+class PWD:
+	def __init__(self, user, passwd, uid, gid, gecos, home, shell):
+		self.pw_name = user
+		self.pw_passwd = passwd
+		self.pw_uid = uid
+		self.pw_gid = gid
+		self.pw_gecos = gecos
+		self.pw_home = home
+		self.pw_shell = shell
+
+		self.gecos_fn = None
+		self.gecos_room = None
+
+		gecos = gecos.split(',')
+		if gecos:
+			self.gecos_fullname = gecos.pop(0)
+		if gecos:
+			self.gecos_room = gecos.pop(0)
+
+def getpwnam(node, login):
+	node.logInfo("Obtaining passwd information for %s" % login)
+	status = node.run("grep '^%s:' /etc/passwd" % login, stdout = bytearray(), quiet = True)
+	if not status:
+		node.logFailure("Could not find user %s in /etc/passwd" % login)
+		return None
+
+	fields = status.stdoutString.strip().split(':')
+	return PWD(*fields)
+
+def force_shell(node, login, shell):
+	node.logInfo("Forcing %s's shell to %s" % (login, shell))
+	cmd = "sed -i '/^%s:/!b;s|:[^:]*$|:%s|' /etc/passwd" % (login, shell)
+
+	status = node.run(cmd, user = 'root', quiet = True)
+	if not status:
+		node.logInfo("sed command failed: %s" % status.message)
+		return False
+
+	pwd = getpwnam(node, login)
+	if pwd.pw_shell != shell:
+		node.logInfo("force_shell: sed command succeeded, but passwd entry for %s has shell %s" % (login, pwd.pw_shell))
+		return False
+
+	return True
+
+def force_gecos(node, login, fullname):
+	node.logInfo("Forcing %s's fullname to %s" % (login, fullname))
+	cmd = "sed -i 's|^\\(%s:[^:]*:[^:]*:[^:]*:\\)[^:]*|\\1%s|' /etc/passwd" % (login, fullname)
+
+	status = node.run(cmd, user = 'root', quiet = True)
+	if not status:
+		node.logInfo("sed command failed: %s" % status.message)
+		return False
+
+	pwd = getpwnam(node, login)
+	if pwd.gecos_fullname != fullname:
+		node.logInfo("force_shell: sed command succeeded, but passwd entry for %s has fullname %s" % (login, pwd.gecos_fullname))
+		return False
+
+	return True
+
 @susetest.test
 def verify_chfn(driver):
 	'''shadow.chfn: check if test user can change GECOS information'''
@@ -17,6 +78,10 @@ def verify_chfn(driver):
 
 	if not user.password:
 		node.logFailure("user %s: password not known" % user.login)
+		return
+
+	if not force_gecos(node, user.login, "Jane Testuser"):
+		node.logError("Failed to change the user's fullname")
 		return
 
 	chat_script = [
@@ -31,26 +96,57 @@ def verify_chfn(driver):
 		node.logFailure("chfn command exited with error")
 		return
 
-	st = node.run("grep '^%s:' /etc/passwd" % user.login, stdout = bytearray())
-	if not st:
-		node.logFailure("Could not find user %s in /etc/passwd" % user.login)
+	pwd = getpwnam(node, user.login)
+	if not pwd:
 		return
 
-	gecos = st.stdoutString.split(':')
-	if len(gecos) < 5:
-		node.logFailure("Could not parse /etc/passwd entry for user %s" % user.login)
-		return
-
-	gecos_fields = gecos[4].split(',')
-	if len(gecos_fields) < 2:
-		node.logFailure("Bad number of GECOS fields for user %s" % user.login)
-		return
-
-	if gecos_fields[1] != '123':
+	if pwd.gecos_room != '123':
 		node.logFailure("Apparently, we failed to change the user info for %s." % user.login)
 		return
 
 	node.logInfo("OK, GECOS field was changed to include the phone number 123")
+
+@susetest.test
+def verify_chsh(driver):
+	'''shadow.chsh: check if test user can change shell'''
+	wrong_shell = "/bin/tcsh"
+	good_shell = "/bin/bash"
+
+	node = driver.client
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	if not user.password:
+		node.logFailure("user %s: password not known" % user.login)
+		return
+
+	if not force_shell(node, user.login, wrong_shell):
+		node.logError("Failed to change the user's shell to %s" % wrong_shell)
+		return
+
+	chat_script = [
+		["assword: ", user.password],
+	]
+
+	st = node.runChatScript("chsh --shell %s" % good_shell, chat_script, timeout = 10, user = user.login)
+	if st is None:
+		return
+
+	if not st:
+		node.logFailure("chsh command exited with error")
+		return
+
+	pwd = getpwnam(node, user.login)
+	if not pwd:
+		return
+
+	if pwd.pw_shell != good_shell:
+		node.logFailure("Apparently, we failed to change the shell for %s (found %s instead of %s)." % (user.login, pwd.pw_shell, good_shell))
+		return
+
+	node.logInfo("OK, shell was changed to %s." % good_shell)
 
 @susetest.test
 def verify_passwd(driver):
@@ -83,7 +179,7 @@ def verify_passwd(driver):
 		node.logFailure("passwd command exited with error")
 	else:
 		pass
-	
+
 	node.run("mv /etc/shadow.twopence /etc/shadow")
 	node.logInfo("restored shadow file")
 
