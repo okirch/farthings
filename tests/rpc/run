@@ -116,6 +116,7 @@ def __rpcinfo_local_test(driver, args):
 
 	rpcinfo.runOrFail(" ".join(args))
 
+susetest.define_parameterized(__rpcinfo_local_test)
 susetest.define_parameterized(__rpcinfo_local_test, "@server:ipv4_loopback")
 susetest.define_parameterized(__rpcinfo_local_test, "@server:ipv6_loopback")
 susetest.define_parameterized(__rpcinfo_local_test, "-p")
@@ -125,6 +126,7 @@ susetest.define_parameterized(__rpcinfo_local_test, "-m")
 susetest.define_parameterized(__rpcinfo_local_test, "-m", "@server:ipv4_loopback")
 susetest.define_parameterized(__rpcinfo_local_test, "-m", "@server:ipv6_loopback")
 susetest.define_parameterized(__rpcinfo_local_test, "-T", "local", "ignoreme", "portmapper")
+susetest.define_parameterized(__rpcinfo_local_test, "-s")
 
 ##################################################################
 # Remote rpcinfo:
