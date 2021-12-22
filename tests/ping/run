@@ -1,0 +1,44 @@
+#!/usr/bin/python3
+#
+# Test script for ping
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+
+susetest.requireResource('ipv4_address', resourceType = 'string')
+
+@susetest.setup
+def setup(driver):
+	'''Ensure we have all the resources this test suite requires'''
+	global ping
+
+	# Locate ping on the client
+	ping = driver.client.requireExecutable("ping")
+
+
+@susetest.test
+def verify_ping(driver):
+	'''ping.ipv4: check if test user can use ping'''
+	node = driver.client
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	cmd = "%s -c5 %s" % (ping.path, driver.server.ipv4_address)
+	st = node.run(cmd, user = user.login)
+	if not st:
+		node.logFailure("ping failed: %s" % st.message)
+		return
+
+	node.logInfo("OK, ping to immediate neighbor works")
+
+
+# boilerplate tests
+susetest.template('selinux-verify-executable', 'ping', nodeName = 'client')
+# ping6 is usually a link to ping
+#susetest.template('selinux-verify-executable', 'ping6', nodeName = 'client')
+
+if __name__ == '__main__':
+	susetest.perform()

@@ -6,10 +6,39 @@
 
 import susetest
 
+susetest.requireResource('ipv4_address', resourceType = 'string')
+
+@susetest.setup
+def setup(driver):
+	'''Ensure we have all the resources this test suite requires'''
+	global traceroute
+
+	# Locate traceroute on the client
+	traceroute = driver.client.requireExecutable("traceroute")
+
+
+@susetest.test
+def verify_traceroute(driver):
+	'''traceroute.ipv4: check if test user can use traceroute'''
+	node = driver.client
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	cmd = "%s %s" % (traceroute.path, driver.server.ipv4_address)
+	st = node.run(cmd, user = user.login)
+	if not st:
+		node.logFailure("traceroute failed: %s" % st.message)
+		return
+
+	node.logInfo("OK, traceroute to immediate neighbor works")
+
+
 # boilerplate tests
-susetest.template('selinux-verify-executable', 'traceroute')
+susetest.template('selinux-verify-executable', 'traceroute', nodeName = 'client')
 # traceroute6 is usually a link to traceroute
-#susetest.template('selinux-verify-executable', 'traceroute6')
+#susetest.template('selinux-verify-executable', 'traceroute6', nodeName = 'client')
 
 if __name__ == '__main__':
 	susetest.perform()
