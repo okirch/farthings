@@ -11,20 +11,20 @@ susetest.requireResource('ipv4_address', resourceType = 'string')
 @susetest.setup
 def setup(driver):
 	'''Ensure we have all the resources this test suite requires'''
-	global ping
+	global ping, user
 
 	# Locate ping on the client
 	ping = driver.client.requireExecutable("ping")
 
+	user = driver.client.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
 
 @susetest.test
 def verify_ping(driver):
 	'''ping.ipv4: check if test user can use ping'''
 	node = driver.client
-	user = node.requireUser("test-user")
-	if not user.uid:
-		node.logFailure("user %s does not seem to exist" % user.login)
-		return
 
 	cmd = "%s -c5 %s" % (ping.path, driver.server.ipv4_address)
 	st = node.run(cmd, user = user.login)
@@ -33,6 +33,47 @@ def verify_ping(driver):
 		return
 
 	node.logInfo("OK, ping to immediate neighbor works")
+
+@susetest.test
+def verify_ping_ctrl_c(driver):
+	'''ping.ctl_c: check user can interrupt ping'''
+	global user
+
+	node = driver.client
+
+	cmd = "%s -c10 %s" % (ping.path, "localhost")
+	# driver.server.ipv4_address)
+	chat = node.chat(cmd, user = user.login, tty = True, timeout = 3)
+	if not chat:
+		node.logFailure("ping failed")
+		return
+
+	if not chat.expect("time="):
+		node.logFailure("no response from host?")
+		return
+
+	node.logInfo("Sending Ctrl-C")
+	chat.send("\003")
+	if not chat.expect("^C", timeout = 1):
+		node.logFailure("ping did not receive Ctrl-C")
+		return
+	node.logInfo("OK, found \"^C\" in ping output")
+
+	susetest.say("waiting for ping command to display statistics and exit properly")
+	if not chat.expect("ping statistics", timeout = 1):
+		node.logFailure("ping did not exit properly")
+		return
+	node.logInfo("OK, found \"ping statistics\" in ping output")
+
+	# Note, the command's wait() status will not indicate an exitSignal,
+	# as ping catches the signal and does an orderly exit.
+	print("Waiting for chat command to exit")
+	st = chat.wait()
+	if not st:
+		node.logFailure("ping failed: %s" % st.message)
+		return
+
+	node.logInfo("OK, able to interrupt ping command with Ctrl-C")
 
 
 # boilerplate tests
