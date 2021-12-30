@@ -1,0 +1,94 @@
+#!/usr/bin/python3
+#
+# Test script for at utils
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+import time
+
+susetest.requireResource('at', resourceType = 'executable')
+susetest.requireResource('atd', resourceType = 'service')
+
+def verify_fencepost_file(node, delay, interval = 1):
+	# Note, we can't just sleep for an arbitrary length of time; otherwise,
+	# twopence will miss keepalive packets - and shut down the connection 
+	susetest.say("Waiting for fencepost file to appear (timeout %d seconds)" % delay)
+
+	found = False
+	while delay and not found:
+		if interval > delay:
+			interval = delay
+		time.sleep(interval)
+		delay -= interval
+
+		if node.run("test -f /tmp/fencepost", quiet = True):
+			found = True
+
+	if not found:
+		node.logFailure("could not find fencepost file; at job did not succeed")
+	
+	return found
+
+@susetest.test
+def verify_simple(driver):
+	'''at.simple: verify that at can schedule jobs'''
+	node = driver.client
+
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	node.run("rm -f /tmp/fencepost")
+
+	# This is ugly. we should be able to pass strings as stdin without having
+	# to go through such contortions.
+	command = "touch /tmp/fencepost".encode('utf-8')
+
+	st = node.run("at now + 1 minute", stdin = command, timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("at command failed: %s" % st.message)
+		return
+
+	if not verify_fencepost_file(node, 61):
+		return
+
+	node.logInfo("OKAY, this seems to work as expected")
+
+@susetest.test
+def verify_interactive(driver):
+	'''at.simple: verify at interactive mode'''
+	node = driver.client
+
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	node.run("rm -f /tmp/fencepost")
+
+	chat_script = [
+		["at>", "touch /tmp/fencepost"],
+		["at>", "\004"],
+	]
+
+	st = node.runChatScript("at now + 1 minute", chat_script, timeout = 10, user = user.login, tty = True)
+	if not st:
+		node.logFailure("at command failed: %s" % st.message)
+		return
+
+	if not verify_fencepost_file(node, 61):
+		return
+
+	node.logInfo("OKAY, this seems to work as expected")
+
+# TBD:
+# - verify that atq can see scheduled jobs
+# - verify that atrm can cancel scheduled jobs
+
+# boilerplate tests
+susetest.template('selinux-verify-executable', 'at')
+
+if __name__ == '__main__':
+	susetest.perform()
