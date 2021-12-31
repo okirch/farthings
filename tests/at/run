@@ -89,6 +89,7 @@ def verify_interactive(driver):
 
 # boilerplate tests
 susetest.template('selinux-verify-executable', 'at')
+#susetest.template('selinux-verify-files', ['/var/spool/at', '/var/spool/atjobs', '/var/spool/atspool'])
 
 if __name__ == '__main__':
 	susetest.perform()

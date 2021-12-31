@@ -4,4 +4,11 @@ TWOPENCE_TESTDIR	= /usr/lib/twopence
 all: ;
 
 install:
-	cp -av tests/* $(DESTDIR)$(TWOPENCE_TESTDIR)
+	@for dir in tests/*; do \
+		test -d $$dir || continue; \
+		tn="$${dir#*/}"; \
+		dstdir=$(DESTDIR)$(TWOPENCE_TESTDIR)/$$tn; \
+		echo "Installing $$dir -> $$dstdir"; \
+		mkdir -p $$dstdir; \
+		cp $$dir/* $$dstdir; \
+	done
