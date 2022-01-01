@@ -1,0 +1,81 @@
+#!/usr/bin/python3
+#
+# Test script for crontab and friends
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+import time
+
+susetest.requireResource('crontab', resourceType = 'executable')
+susetest.requireResource('cron', resourceType = 'service')
+
+def verify_fencepost_file(node, delay, interval = 1):
+	# Note, we can't just sleep for an arbitrary length of time; otherwise,
+	# twopence will miss keepalive packets - and shut down the connection 
+	susetest.say("Waiting for fencepost file to appear (timeout %d seconds)" % delay)
+
+	found = False
+	while delay and not found:
+		if interval > delay:
+			interval = delay
+		time.sleep(interval)
+		delay -= interval
+
+		if node.run("test -f /tmp/fencepost", quiet = True):
+			found = True
+
+	if not found:
+		node.logFailure("could not find fencepost file; crontab job did not succeed")
+	
+	return found
+
+@susetest.test
+def verify_simple(driver):
+	'''crontab.simple: verify that crontab can schedule jobs'''
+	node = driver.client
+
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+
+	node.run("rm -f /tmp/fencepost")
+
+	# This is ugly. we should be able to pass strings as stdin without having
+	# to go through such contortions.
+	command = "* * * * * touch /tmp/fencepost\n"
+
+	st = node.run("crontab", stdin = command.encode('utf-8'), timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("crontab command failed: %s" % st.message)
+		return
+
+	if not verify_fencepost_file(node, 61):
+		return
+
+	st = node.run("crontab -l", timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("crontab -l failed: %s" % st.message)
+		return
+
+	got = st.stdoutString.strip()
+	command = command.strip()
+	if got != command:
+		node.logFailure("crontab -l did not return what we configured")
+		node.logInfo("  we wrote: %s" % command)
+		node.logInfo("  crontab returned: %s" % got)
+		return
+
+	st = node.run("crontab -r", timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("crontab -r failed: %s" % st.message)
+		return
+
+	node.logInfo("OKAY, this seems to work as expected")
+
+# boilerplate tests
+susetest.template('selinux-verify-executable', 'crontab')
+
+if __name__ == '__main__':
+	susetest.perform()
