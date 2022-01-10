@@ -1,0 +1,388 @@
+#!/usr/bin/python3
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+from susetest.resources import ServiceResource
+import susetest
+
+susetest.requireResource("ipv4_address")
+susetest.optionalResource("ipv6_address")
+
+class NTP:
+	def __init__(self, driver):
+		self._driver = driver
+		self._server = None
+		self._client = None
+
+	@property
+	def server(self):
+		if self._server is None:
+			self._server = self.create(self._driver.server)
+		return self._server
+
+	@property
+	def client(self):
+		if self._client is None:
+			self._client = self.create(self._driver.client)
+		return self._client
+
+	def create(self, node):
+		config = node.requireFile("ntp_conf")
+		if not config:
+			node.logError("Unable to find ntp config file, aborting test")
+			# FIXME: susetest.abort()
+			raise ValueError("Failed to find ntp config file")
+
+		if config.format == "chrony" or config.package == "chrony":
+			return Chrony(node)
+
+		# TBD: we could add tests for the old ISC NTP here, or whatever
+		# will come after chrony
+
+		raise NotImplementedError("No NTP tests for %s" % config.package)
+
+class _NTP_Impl:
+	def __init__(self, node, flavor):
+		self.node = node
+		self.implementation = flavor
+		self._service = None
+		self._control = None
+		self._config_file = None
+		self._key_file = None
+
+	@property
+	def service(self):
+		if not self._service:
+			self._service = self.node.requireService("ntp")
+		return self._service
+
+	@property
+	def control(self):
+		if not self._control:
+			self._control = self.node.requireExecutable("ntpcontrol")
+		return self._control
+
+	@property
+	def config_file(self):
+		if not self._config_file:
+			self._config_file = self.node.requireFile("ntp_conf")
+		return self._config_file
+
+	@property
+	def key_file(self):
+		if not self._key_file:
+			self._key_file = self.node.requireFile("ntp_keys")
+		return self._key_file
+
+	def start(self):
+		service = self.service
+		if not service:
+			return False
+
+		return service.start()
+
+	def restart(self):
+		service = self.service
+		if not service:
+			return False
+
+		return service.restart()
+
+class Chrony(_NTP_Impl):
+	def __init__(self, node):
+		super().__init__(node, "chrony")
+
+		self._key_file_enabled = False
+		self._stale_config = False
+
+	def is_okay(self):
+		st = self.control.run("clients", user = "root", stdout = bytearray())
+		if not st:
+			return False
+
+		for line in st.stdoutString.split():
+			line = line.strip()
+			if line.startswith("506"):
+				susetest.say("Cannot talk to NTP daemon: chronyc reports %s" % line)
+				return False
+
+		return True
+
+	def waitSynchronize(self):
+		# Wait up to 60 seconds for the server to synchronize
+		#st = self.control.run("-h 127.0.0.1,::1 waitsync 60 0.1 0.0 1", timeout = 66, user = "root")
+		st = self.control.run("waitsync 60 0.1 0.0 1", timeout = 66, user = "root")
+		return bool(st)
+
+	def showSources(self, user = None):
+		if user is None:
+			user = self.node.test_user
+
+		st = self.control.run("sources", timeout = 10, user = user)
+		return bool(st)
+
+	def allowClient(self, address):
+		if not self.service:
+			return False
+
+		st = self.control.run("allow %s" % address)
+		return bool(st)
+
+	def useServer(self, address, options = []):
+		cmd = " ".join(["server", address] + options)
+		if not self.editConfig(['pool', 'server', ], [cmd, ]):
+			self.node.logFailure("Unable to modify config file")
+			return False
+
+		# Ugly
+		self.node.runOrFail("rm -f /etc/chrony.d/*.conf")
+
+		return True
+
+	def editConfig(self, removeCommands, replacementLines):
+		config_file = self.config_file
+		if not config_file:
+			self.node.logFailure("Unable to locate NTP config file")
+			return False
+
+		return self.editSimpleFile(config_file.path, removeCommands, replacementLines)
+
+	def editKeyFile(self, removeKeys, replaceKeys):
+		key_file = self.key_file
+		if not key_file:
+			self.node.logFailure("Unable to locate NTP keys file")
+			return False
+
+		return self.editSimpleFile(key_file.path, removeKeys, replaceKeys)
+
+	def editSimpleFile(self, path, removeCommands, replacementLines):
+		node = self.node
+
+		node.logInfo("Editing %s" % path)
+
+		content = node.recvbuffer(path, user = 'root')
+		if not content:
+			return False
+
+		result = []
+		for line in content.decode('utf-8').split('\n'):
+			w = line.split()
+			if w and w[0] in removeCommands:
+				result += replacementLines
+				replacementLines = []
+			else:
+				result.append(line)
+
+		if replacementLines:
+			result += replacementLines
+
+		content = ('\n'.join(result) + '\n').encode('utf-8')
+		st = node.sendbuffer(path, content, user = 'root')
+		if not st:
+			node.logError("Unable to overwrite %s: %s" % (path, st.message))
+			return False
+
+		return True
+
+	# Create a key and install it in the NTP daemon.
+	# This returns the key as a string that can be written to chrony.keys on
+	# a different machine, as in
+	#   42 SHA1 HEX:E3C481A8828F3DBC0668775....
+	def createKey(self, id, algo = None, bits = None):
+		cmd = ["keygen", id]
+		if algo:
+			cmd.append(algo)
+			if bits:
+				cmd.append(bits)
+		cmd = " ".join(cmd)
+
+		st = self.control.run(cmd, stdout = bytearray())
+		if not st:
+			self.target.logFailure("keygen command failed: %s" % st.message)
+			return None
+
+		return st.stdoutString.strip()
+
+	def installKey(self, id, key):
+		if not self.editKeyFile([id], [key]):
+			return False
+
+		# By default, chrony.conf may have the keyfile directive commented out
+		if not self._key_file_enabled:
+			key_line = "keyfile %s" % self.key_file.path
+			self.editConfig([
+					"keyfile",
+					"#keyfile",
+					"# keyfile",
+				], [
+					key_line
+				])
+
+			self.node.run("cat /etc/chrony.keys")
+			self._key_file_enabled = True
+			self._stale_config = True
+	
+		if self._stale_config:
+			self.restart()
+			self._stale_config = False
+		elif self.service.running():
+			st = self.control.run("rekey")
+			if not st:
+				self.target.logFailure("rekey command failed: %s" % st.message)
+				return False
+
+		return True
+
+
+@susetest.setup
+def setup(driver):
+	'''Ensure we have all the resources this test suite requires'''
+	global ntp
+
+	ntp = NTP(driver)
+
+@susetest.test
+def ntp_keys_permission(driver):
+	'''keyfile-permissions: verify that the NTP keys file is protected properly'''
+
+	key_file = ntp.server.key_file
+	if not key_file:
+		driver.server.logInfo("No NTP keyfile present, skipping test")
+		driver.skipTest()
+		return
+
+	st = driver.server.runOrFail("stat -Lc %%a %s" % key_file.path, stdout = bytearray(), quiet = True)
+	if not st:
+		return
+
+	permissions = st.stdoutString.strip()
+	if permissions != "600":
+		driver.server.logFailure("%s has unexpected permissions 0%s (expected 0600)" % (
+				key_file.path, permissions))
+		driver.server.logInfo("Trying to fix permissions")
+		driver.server.run("chmod 644 %s" % key_file.path)
+		return
+
+	driver.server.logInfo("NTP keyfile has proper permissions")
+
+@susetest.test
+def ntp_server_start(driver):
+	'''wait-start: that service can be started'''
+
+	if not ntp.server.start():
+		driver.server.logFailure("NTP service failed to start")
+		return
+	
+	if not ntp.server.is_okay():
+		driver.server.logFailure("Cannot talk to NTP daemon")
+		return
+
+	driver.server.logInfo("The NTP daemon seems to be up and running")
+
+@susetest.test
+def ntp_server_synchronize(driver):
+	'''wait-pool-synch: check that server can synchronize with pool'''
+
+	if not ntp.server.waitSynchronize():
+		driver.server.logFailure("NTP service failed to synchronize")
+		return
+
+	driver.server.logInfo("The NTP daemon was able to synchronize with upstream")
+
+@susetest.test
+def ntp_display_sources(driver):
+	'''display-sources: check that root user can display sources'''
+
+	if not ntp.server.showSources(user = "root"):
+		driver.server.logFailure("unable to display sources")
+		return
+	
+	susetest.say("Good, this seems to work as expected")
+
+@susetest.test
+def ntp_display_sources_testuser(driver):
+	'''display-sources-user: check that test user can display sources'''
+
+	if not ntp.server.showSources():
+		driver.server.logFailure("unable to display sources")
+		return
+	
+	susetest.say("Good, this seems to work as expected")
+
+# This is not a test in its own right; it's just a helper function
+def __ntp_client_use_server(driver, attr_name, secure = False):
+	def get_address(node):
+		address = getattr(node, attr_name, None)
+		if address is None:
+			node.logInfo("%s not set; skipping" % attr_name)
+			driver.skipTest()
+		return address
+
+	client_ip = get_address(driver.client)
+	if client_ip is None:
+		return
+
+	server_ip = get_address(driver.server)
+	if server_ip is None:
+		return
+
+	key_id = None
+	if secure:
+		key_id = "42"
+		key = ntp.server.createKey(key_id)
+		if key is None:
+			driver.server.logFailure("cannot generate symmetrical key")
+			return
+
+		print("Generated key %s" % key)
+		ntp.server.installKey(key_id, key)
+		ntp.client.installKey(key_id, key)
+
+	if not ntp.server.allowClient(client_ip):
+		driver.server.logFailure("cannot configure NTP daemon to allow client %s" % client_ip)
+		return
+
+	server_options = ["iburst"]
+	if key_id:
+		server_options += ["key", key_id]
+
+	if not ntp.client.useServer(server_ip, server_options):
+		driver.client.logFailure("cannot configure NTP daemon to use server %s" % server_ip)
+		return
+
+	# actually, restart
+	if not ntp.client.restart():
+		driver.client.logFailure("NTP daemon failed to restart")
+		return
+	
+	if not ntp.client.waitSynchronize():
+		driver.client.logFailure("NTP service failed to synchronize")
+		return
+
+	ntp.client.showSources()
+
+	driver.client.logInfo("The NTP daemon seems to be up and running")
+
+
+@susetest.test
+def ntp_client_use_server_ipv4(driver):
+	'''client-use-server-ipv4: check that client can synchronize to server via IPv4'''
+	__ntp_client_use_server(driver, 'ipv4_address')
+
+@susetest.test
+def ntp_client_use_server_ipv6(driver):
+	'''client-use-server-ipv6: check that client can synchronize to server via IPv6'''
+	__ntp_client_use_server(driver, 'ipv6_address')
+
+@susetest.test
+def ntp_use_keyed_communication(driver):
+	'''keyed-communication: check that secure communication with symmetrical encryption keys works'''
+	__ntp_client_use_server(driver, 'ipv4_address', secure = True)
+
+# boilerplate tests
+susetest.template('selinux-verify-executable', 'ntpcontrol', nodeName = 'server')
+susetest.template('selinux-verify-executable', 'ntpd', nodeName = 'server')
+susetest.template('selinux-verify-file', 'ntp_keys', nodeName = 'server')
+
+if __name__ == '__main__':
+	susetest.perform()
