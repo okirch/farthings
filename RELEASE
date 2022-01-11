@@ -8,5 +8,5 @@
 # If we ever bump the major version number, more manual work is
 # required.
 #
-VERSION=0.1
+VERSION=0.2
 DATE="December 31, 2021"
