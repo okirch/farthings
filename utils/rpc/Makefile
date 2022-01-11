@@ -1,0 +1,96 @@
+
+BINDIR	= /usr/bin
+
+CCOPT	= -O2
+CFLAGS	= -Wall $(CCOPT) -I/usr/include/tirpc -I.
+APPS	= rpc.squared square rpctest getaddr \
+	  bug940191
+LINK	= -L. -lrpctest -lsuselog -ltirpc -lgssapi_krb5
+
+SRVSRCS	= server_main.c
+CLTSRCS	= client_main.c \
+	  stress.c
+TSTSRCS	= test_main.c
+GADSRCS	= getaddr.c
+LIBSRCS	= register.c \
+	  netpath.c \
+	  netconfig.c \
+	  socket.c \
+	  pmap.c \
+	  rpcb.c \
+	  svc.c \
+	  clnt.c \
+	  logging.c \
+	  util.c \
+	  square_impl.c \
+	  square_svc.c \
+	  square_clnt.c \
+	  square_xdr.c
+_RPCGEN	= square_clnt.c square_svc.c square_xdr.c
+GENFILES= $(addprefix ,$(_RPCGEN))
+ALLSRCS	= $(SRVSRCS) $(CLTSRCS) $(TSTSRCS) $(GADSRCS) $(LIBSRCS)
+
+LIB	= librpctest.a
+SRVOBJS	= $(addprefix obj/,$(SRVSRCS:.c=.o))
+CLTOBJS	= $(addprefix obj/,$(CLTSRCS:.c=.o))
+LIBOBJS	= $(addprefix obj/,$(LIBSRCS:.c=.o))
+TSTOBJS	= $(addprefix obj/,$(TSTSRCS:.c=.o))
+GADOBJS	= $(addprefix obj/,$(GADSRCS:.c=.o))
+
+
+all: $(APPS)
+
+install: $(APPS)
+	install -m 755 -d $(DESTDIR)$(BINDIR)
+	install -m 555 $(APPS) $(DESTDIR)$(BINDIR)
+
+tags: .FORCE
+	ctags $(addprefix ,$(ALLSRCS))
+
+.FORCE: ;
+
+clean:
+	rm -rf obj $(APPS) $(LIB) $(GENFILES)
+
+$(LIB): $(LIBOBJS)
+	$(AR) cr $@ $(LIBOBJS)
+
+rpc.squared: $(SRVOBJS) $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(SRVOBJS) $(LINK)
+
+square: $(CLTOBJS) $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(CLTOBJS) $(LINK)
+
+rpctest: $(TSTOBJS) $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(TSTOBJS) $(LINK)
+
+getaddr: $(GADOBJS) $(LIB)
+	$(CC) $(CFLAGS) -o $@ $(GADOBJS) $(LINK)
+
+bug940191: obj/bug940191.o $(LIB)
+	$(CC) $(CFLAGS) -o $@ obj/bug940191.o $(LINK)
+
+
+obj/%.o: %.c
+	@mkdir -p obj
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+square.h: square.x
+	rm -f $@
+	rpcgen -h -o $@ $<
+
+square_xdr.c: square.x
+	rm -f $@
+	rpcgen -c -o $@ $<
+
+square_clnt.c: square.x
+	rm -f $@
+	rpcgen -l -o $@ $<
+
+square_svc.c: square.x
+	rm -f $@
+	rpcgen -m -o $@ $<
+
+obj/square_xdr.o: square_xdr.c square.h
+	$(CC) $(CFLAGS) -Wno-unused -c -o $@ $<
+

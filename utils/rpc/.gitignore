@@ -1,0 +1,10 @@
+bug940191
+getaddr
+librpctest.a
+obj/
+rpc.squared
+rpctest
+square
+square_clnt.c
+square_svc.c
+square_xdr.c

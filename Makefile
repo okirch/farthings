@@ -1,9 +1,12 @@
 
 TWOPENCE_TESTDIR	= /usr/lib/twopence
 
-all: ;
+all install clean::
+	@for dir in utils/*; do \
+		make -C $$dir $@; \
+	done
 
-install:
+install::
 	@for dir in tests/*; do \
 		test -d $$dir || continue; \
 		tn="$${dir#*/}"; \
