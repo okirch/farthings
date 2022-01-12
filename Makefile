@@ -6,7 +6,7 @@ all install clean::
 		make -C $$dir $@; \
 	done
 
-install::
+install install-tests::
 	@for dir in tests/*; do \
 		test -d $$dir || continue; \
 		tn="$${dir#*/}"; \
