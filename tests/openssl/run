@@ -1,0 +1,102 @@
+#!/usr/bin/python3
+#
+# Test script for openssl command line utility. This is written primarily
+# with FIPS mode in mind.
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+
+__fips_disabled_digests = [
+	'md4',
+	'md5',
+	'mdc2',
+	'gost',
+]
+
+__fips_disabled_ciphers = [
+	'des',
+	'des-ede',
+]
+
+def __verify_digest(driver, args):
+	'''@ARGS: check whether openssl digest @ARGS works'''
+
+	node = driver.client
+	algo = args[0]
+
+	expectToFail = False
+	if algo in __fips_disabled_digests and node.testFeature('fips'):
+		expectToFail = True
+
+	data = "random input".encode('utf-8')
+
+	openssl = node.requireExecutable("openssl")
+	st = openssl.run(" ".join(args), stdin = data, stdout = bytearray())
+	if not st:
+		if not expectToFail:
+			node.logFailure(f"algorithm {algo} failed unexpectedly")
+			return
+		node.logInfo(f"algorithm {algo} disabled by FIPS: good")
+	else:
+		if expectToFail:
+			node.logFailure(f"algorithm {algo} should have been disabled by FIPS mode")
+			return
+		node.logInfo(f"algorithm {algo} seems to work")
+
+susetest.define_parameterized(__verify_digest, "md4")
+susetest.define_parameterized(__verify_digest, "md5")
+susetest.define_parameterized(__verify_digest, "mdc2")
+susetest.define_parameterized(__verify_digest, "sha1")
+susetest.define_parameterized(__verify_digest, "sha256")
+susetest.define_parameterized(__verify_digest, "sha384")
+susetest.define_parameterized(__verify_digest, "sha512")
+susetest.define_parameterized(__verify_digest, "gost")
+
+def __verify_cipher(driver, args):
+	'''local: check whether openssl cipher @ARGS works'''
+
+	node = driver.client
+	algo = args[0]
+
+	expectToFail = False
+	if algo in __fips_disabled_ciphers and node.testFeature('fips'):
+		expectToFail = True
+
+	data = "random input".encode('utf-8')
+
+	openssl = node.requireExecutable("openssl")
+	st = openssl.run(f"enc -{algo} -pbkdf2 -out encrypted.bin -pass pass:3l1t3", stdin = data, stdout = bytearray())
+	if not st:
+		if not expectToFail:
+			node.logFailure(f"algorithm {algo} failed unexpectedly")
+			return
+		node.logInfo(f"algorithm {algo} disabled by FIPS: good")
+		return
+
+	if expectToFail:
+		node.logFailure(f"algorithm {algo} should have been disabled by FIPS mode")
+		return
+
+	node.logInfo(f"encryption with {algo} seems to work, now verify decryption")
+	st = openssl.run(f"enc -d -{algo} -pbkdf2 -in encrypted.bin -pass pass:3l1t3", stdout = bytearray(), quiet = True)
+	if not st:
+		node.logFailure(f"decryption with {algo} failed")
+		return
+
+	if st.stdout != data:
+		node.logFailure("decryption did not produce the original clear test")
+		node.logInfo(f" clear text: {data}")
+		node.logInfo(f" deciphered: {st.stdout}")
+		return
+
+	node.logInfo(f"algorithm {algo} seems to work")
+
+susetest.define_parameterized(__verify_cipher, "des")
+susetest.define_parameterized(__verify_cipher, "des-ede")
+susetest.define_parameterized(__verify_cipher, "des3")
+susetest.define_parameterized(__verify_cipher, "aes128")
+susetest.define_parameterized(__verify_cipher, "aes256")
+
+if __name__ == '__main__':
+	susetest.perform()
