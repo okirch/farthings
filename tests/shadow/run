@@ -251,6 +251,11 @@ def __verify_crypt_algo(driver, args):
 	node = driver.client
 	algo = args[0]
 
+	chpasswd = node.requireExecutable("chpasswd")
+	if chpasswd is None:
+		node.logError("Unable to find chpasswd")
+		return
+
 	# FIXME it would be nice if our resource handling would properly
 	# reset resources after use. Eg. restore the password after we've
 	# messed with it
@@ -258,21 +263,31 @@ def __verify_crypt_algo(driver, args):
 
 	expectedToFail = node.testFeature("fips") and algo not in __fips_acceptable_crypt_algos
 
-	data = f"{user.login}:c00lp@assw0rd".encode('utf-8')
-	st = node.run(f"chpasswd -c {algo}", stdin = data, stdout = bytearray(), quiet = True)
+	data = f"{user.login}:{user.password}".encode('utf-8')
+	st = chpasswd.run(f"-c {algo}", stdin = data, stdout = bytearray(), quiet = True)
 	if not st:
 		if not expectedToFail:
 			node.logFailure(f"chpasswd with crypt algorithm {algo} failed unexpectedly")
 			return
 
 		node.logInfo(f"Good, {algo} is forbidden by FIPS 140-2, and chpasswd failed as expected")
-	else:
-		node.logInfo("Restore original password")
-		user.overwritePassword()
+		return
 
-		if expectedToFail:
-			node.logFailure(f"{algo} is forbidden by FIPS 140-2, but chpasswd did not fail")
-			return
+	if expectedToFail:
+		node.logFailure(f"{algo} is forbidden by FIPS 140-2, but chpasswd did not fail")
+		node.logInfo("Displaying user's /etc/shadow entry FYI")
+		node.run(f"grep {user.login} /etc/shadow")
+		return
+
+	verify = node.requireExecutable("verify_password")
+	if verify is None:
+		node.logError("Unable to find verify_password executable");
+		return
+
+	st = verify.run(f"--algorithm {algo} {user.login} '{user.password}'")
+	if not st:
+		node.logFailure("Unable to verify password");
+		return
 
 susetest.define_parameterized(__verify_crypt_algo, "DES")
 susetest.define_parameterized(__verify_crypt_algo, "MD5")
