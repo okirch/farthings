@@ -6,6 +6,11 @@
 
 import susetest
 
+__fips_acceptable_crypt_algos = [
+	'SHA256',
+	'SHA512',
+]
+
 class PWD:
 	def __init__(self, user, passwd, uid, gid, gecos, home, shell):
 		self.pw_name = user
@@ -182,6 +187,97 @@ def verify_passwd(driver):
 
 	node.run("mv /etc/shadow.twopence /etc/shadow")
 	node.logInfo("restored shadow file")
+
+##################################################################
+# IN FIPS mode, login.defs should specify the default password
+# encryption method as SHA256 or SHA512
+##################################################################
+@susetest.test
+def verify_encryption_method(driver):
+	'''shadow.encryption_method: check default encyption algorithm'''
+
+	node = driver.client
+	logindefs = node.requireFile("login.defs")
+	if not logindefs:
+		node.logError("File login.defs does not seem to exist")
+		return
+
+	content = node.recvbuffer(logindefs.path, user = "root", quiet = True)
+	if content is None:
+		node.logError("Unable to retrieve login.defs")
+		return
+
+	algorithm = None
+
+	content = content.decode('utf-8')
+	for line in content.split('\n'):
+		line = line.strip()
+		if line.startswith('#'):
+			continue
+		if not line:
+			continue
+
+		w = line.split(maxsplit = 1)
+		if w[0] != 'ENCRYPT_METHOD':
+			continue
+
+		algorithm = w[1].upper()
+
+	if algorithm is None:
+		node.logFailure(f"{logindefs.path} does not seem to define ENCRYPT_METHOD")
+		return
+
+	if algorithm not in ('DES', 'MD5', 'SHA256', 'SHA512', 'BCRYPT'):
+		node.logFailure(f"{logindefs.path} specifies unknown encryption algorithm {algorithm}")
+		return
+
+	if node.testFeature('fips') and algorithm not in __fips_acceptable_crypt_algos:
+		node.logFailure(f"{logindefs.path} specifies encryption algorithm {algorithm} (forbidden by FIPS 140-2)")
+		return
+
+	node.logInfo(f"Okay, encryption algorithm {algorithm} looks good")
+
+##################################################################
+# FIPS mode forbids DES and MD5 hash algorithms.
+# It seems we're not fully disabling these; and there's probably
+# a reason to keep accepting existing passwords even when hashed
+# with a bad algorithm. However, we should probably make sure we
+# do not accept bad algorithms when setting passwords...
+# So make sure chpasswd -c $ALGO does the right thing.
+##################################################################
+def __verify_crypt_algo(driver, args):
+	'''chpasswd.@ARGS: check whether openssl digest @ARGS works'''
+
+	node = driver.client
+	algo = args[0]
+
+	# FIXME it would be nice if our resource handling would properly
+	# reset resources after use. Eg. restore the password after we've
+	# messed with it
+	user = node.requireUser("test-user")
+
+	expectedToFail = node.testFeature("fips") and algo not in __fips_acceptable_crypt_algos
+
+	data = f"{user.login}:c00lp@assw0rd".encode('utf-8')
+	st = node.run(f"chpasswd -c {algo}", stdin = data, stdout = bytearray(), quiet = True)
+	if not st:
+		if not expectedToFail:
+			node.logFailure(f"chpasswd with crypt algorithm {algo} failed unexpectedly")
+			return
+
+		node.logInfo(f"Good, {algo} is forbidden by FIPS 140-2, and chpasswd failed as expected")
+	else:
+		node.logInfo("Restore original password")
+		user.overwritePassword()
+
+		if expectedToFail:
+			node.logFailure(f"{algo} is forbidden by FIPS 140-2, but chpasswd did not fail")
+			return
+
+susetest.define_parameterized(__verify_crypt_algo, "DES")
+susetest.define_parameterized(__verify_crypt_algo, "MD5")
+susetest.define_parameterized(__verify_crypt_algo, "SHA256")
+susetest.define_parameterized(__verify_crypt_algo, "SHA512")
 
 # boilerplate tests
 susetest.template('selinux-verify-executable', 'passwd')
