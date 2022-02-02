@@ -33,6 +33,22 @@ import susetest
 susetest.requireResource("ipv4_address")
 susetest.optionalResource("ipv6_address")
 
+# Quite a few RPC applications (eg rpcinfo) will attempt a call to bindresvport.
+# This is expected behavior, and we should not fail a test case because of this.
+#
+# The following function looks at a parsed AVC audit message. If it is
+# a name_bind operation on a udp or tcp socket in the reserved range,
+# it downgrades the severity to "info" which means it gets reported in the
+# log, but is not considered a reason to fail the test case.
+def bindresvportConsideredHarmless(violation):
+	if violation.op == "name_bind" and \
+	   violation.tclass in ('udp_socket', 'tcp_socket') and \
+	   violation.src and violation.src.isdecimal() and \
+	   int(violation.src) < 1024:
+		return "info"
+
+	return None
+
 @susetest.setup
 def setup(driver):
 	'''Ensure we have all the resources this test suite requires'''
@@ -48,6 +64,10 @@ def setup(driver):
 	square_client = driver.client.requireExecutable("square")
 
 	driver.client.defaultUser = driver.client.test_user
+
+	selinux = driver.getFeature("selinux")
+	if selinux:
+		selinux.addMessageFilter(bindresvportConsideredHarmless)
 
 @susetest.test
 def rpc_run_rpcinfo_root(driver):
