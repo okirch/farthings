@@ -1,0 +1,110 @@
+#!/usr/bin/python3
+#
+# Test script for coreutils
+#
+# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+
+import susetest
+
+@susetest.setup
+def setup(driver):
+	'''Ensure we have all the resources this test suite requires'''
+	global username
+
+	user = driver.client.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return
+	username = user.login
+
+susetest.template('verify-executable-no-args', 'arch')
+susetest.template('verify-executable-no-args', 'date')
+susetest.template('verify-executable-no-args', 'groups')
+susetest.template('verify-executable-no-args', 'hostid', tty = True)
+susetest.template('verify-executable-no-args', 'id')
+susetest.template('verify-executable-no-args', 'logname', tty = True)
+susetest.template('verify-executable-no-args', 'pinky')
+susetest.template('verify-executable-no-args', 'pwd')
+susetest.template('verify-executable-no-args', 'stty', tty = True)
+susetest.template('verify-executable-no-args', 'sync')
+susetest.template('verify-executable-no-args', 'sync', tty = True)
+susetest.template('verify-executable-no-args', 'tty', tty = True)
+susetest.template('verify-executable-no-args', 'uname', tty = True)
+susetest.template('verify-executable-no-args', 'uptime')
+susetest.template('verify-executable-no-args', 'users')
+susetest.template('verify-executable-no-args', 'who')
+susetest.template('verify-executable-no-args', 'whoami', tty = True)
+
+susetest.template('verify-executable', 'sleep', ['1'])
+susetest.template('verify-executable', 'nice', ['sleep', '1'])
+susetest.template('verify-executable', 'stat', ['/etc'])
+
+susetest.requires('selinux')
+susetest.template('verify-executable', 'id', ['-Z'])
+
+def verify_inode_creation(driver, executable, dname, expected_type, extra_args = None):
+	node = driver.client
+
+	path = f"/tmp/{dname}"
+
+	node.logInfo(f"Removing {path} in case it exists")
+	if expected_type == 'directory':
+		removal_command = f"rmdir {path}"
+	else:
+		removal_command = f"rm -f {path}"
+	node.run(removal_command)
+
+	resource = node.requireExecutable(executable)
+
+	command = f"{resource.path} {path}"
+	if extra_args:
+		command += " " + " ".join(extra_args)
+	st = node.run(command, user = username)
+	if not st:
+		node.logFailure(f"{command} failed: {st.message}")
+		return
+
+	node.logInfo(f"OK, {command} succeeded")
+
+	resource = node.requireExecutable("stat")
+	command = f"{resource.path} --format '%F' {path}"
+	st = node.run(command, user = username, stdout = bytearray())
+	if not st:
+		node.logFailure(f"{command} failed: {st.message}")
+		return
+
+	result = st.stdoutString.strip()
+	if result != expected_type:
+		node.logFailure(f"It seems that {executable} created a {result}, not a {expected_type}")
+		return
+
+	node.run(removal_command)
+
+	node.logInfo(f"OK, {executable} created a {expected_type} as expected")
+
+@susetest.test
+def verify_mkfifo(driver):
+	'''general.mkfifo: verify that mkfifo works'''
+	verify_inode_creation(driver, "mkfifo", "myfifo", "fifo")
+
+@susetest.test
+def verify_mkdir(driver):
+	'''general.mkdir: verify that mkdir works'''
+	verify_inode_creation(driver, "mkdir", "mydir", "directory")
+
+@susetest.test
+def verify_touch(driver):
+	'''general.touch: verify that touch works'''
+	verify_inode_creation(driver, "touch", "myfile", "regular empty file")
+
+@susetest.test
+def verify_truncate(driver):
+	'''general.truncate: verify that truncate works'''
+	verify_inode_creation(driver, "truncate", "myfile", "regular file", ["--size=42k"])
+
+# boilerplate tests
+susetest.template('selinux-verify-package', 'coreutils')
+
+if __name__ == '__main__':
+	susetest.perform()
+
