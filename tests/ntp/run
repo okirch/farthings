@@ -380,9 +380,7 @@ def ntp_use_keyed_communication(driver):
 	__ntp_client_use_server(driver, 'ipv4_address', secure = True)
 
 # boilerplate tests
-susetest.template('selinux-verify-executable', 'ntpcontrol', nodeName = 'server')
-susetest.template('selinux-verify-executable', 'ntpd', nodeName = 'server')
-susetest.template('selinux-verify-file', 'ntp_keys', nodeName = 'server')
+susetest.template('selinux-verify-subsystem', 'ntp', nodeName = 'server')
 
 if __name__ == '__main__':
 	susetest.perform()

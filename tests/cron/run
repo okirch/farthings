@@ -75,7 +75,7 @@ def verify_simple(driver):
 	node.logInfo("OKAY, this seems to work as expected")
 
 # boilerplate tests
-susetest.template('selinux-verify-executable', 'crontab')
+susetest.template('selinux-verify-subsystem', 'cron')
 
 if __name__ == '__main__':
 	susetest.perform()

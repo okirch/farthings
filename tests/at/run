@@ -88,8 +88,7 @@ def verify_interactive(driver):
 # - verify that atrm can cancel scheduled jobs
 
 # boilerplate tests
-susetest.template('selinux-verify-executable', 'at')
-#susetest.template('selinux-verify-files', ['/var/spool/at', '/var/spool/atjobs', '/var/spool/atspool'])
+susetest.template('selinux-verify-subsystem', 'at')
 
 if __name__ == '__main__':
 	susetest.perform()
