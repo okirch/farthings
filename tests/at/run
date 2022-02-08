@@ -10,55 +10,113 @@ import time
 susetest.requireResource('at', resourceType = 'executable')
 susetest.requireResource('atd', resourceType = 'service')
 
-def verify_fencepost_file(node, delay, interval = 1):
+def verify_fencepost_file(node, path, delay, interval = 2):
 	# Note, we can't just sleep for an arbitrary length of time; otherwise,
 	# twopence will miss keepalive packets - and shut down the connection 
-	susetest.say("Waiting for fencepost file to appear (timeout %d seconds)" % delay)
+	susetest.say(f"Waiting for fencepost file {path} to appear (timeout {delay} seconds)")
 
 	found = False
+	command = f"test -f {path}"
 	while delay and not found:
 		if interval > delay:
 			interval = delay
 		time.sleep(interval)
 		delay -= interval
 
-		if node.run("test -f /tmp/fencepost", quiet = True):
+		if node.run(command, quiet = True):
 			found = True
 
 	if not found:
 		node.logFailure("could not find fencepost file; at job did not succeed")
-	
+
 	return found
+
+def at_schedule_simple_job(node, fencepost, when):
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return None
+
+	node.run(f"rm -f {fencepost}")
+
+	# This is ugly. we should be able to pass strings as stdin without having
+	# to go through such contortions.
+	command = f"touch {fencepost}\n".encode('utf-8')
+
+	st = node.run(f"at {when}", stdin = command, timeout = 10, user = user.login)
+	if not st:
+		node.logFailure("at command failed: %s" % st.message)
+		return None
+
+	# We expect at to print a string like this:
+	#  job 13 at Tue Feb  8 09:24:00 2022
+	jobid = None
+	for line in st.stdoutString.split("\n"):
+		message = line.split()
+		if len(message) >= 3 and message[0] == "job" and message[2] == "at":
+			jobid = message[1]
+			return jobid
+
+	node.logFailure("unable to parse response from at comand" + str(message))
+	return None
+
+def at_find_job(node, jobid):
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return False
+
+	st = node.run(f"atq {jobid}", user = user.login)
+	if not st:
+		node.logFailure("atq command failed: %s" % st.message)
+		return False
+
+	# atq displays lines like this:
+	# 16	Tue Feb  8 09:38:00 2022 a testuser
+	found = False
+	for line in st.stdoutString.split("\n"):
+		words = line.split()
+		if not words or words[0] != jobid:
+			continue
+
+		# TBD: should we check for the user?
+		return True
+
+	return False
+
+def at_remove_job(node, jobid):
+	user = node.requireUser("test-user")
+	if not user.uid:
+		node.logFailure("user %s does not seem to exist" % user.login)
+		return False
+
+	st = node.run(f"atrm {jobid}", user = user.login)
+	if not st:
+		node.logFailure("atrm command failed: %s" % st.message)
+		return False
+
+	return True
 
 @susetest.test
 def verify_simple(driver):
 	'''at.simple: verify that at can schedule jobs'''
+	fencepost = "/tmp/fencepost.simple"
 	node = driver.client
 
-	user = node.requireUser("test-user")
-	if not user.uid:
-		node.logFailure("user %s does not seem to exist" % user.login)
+	if not at_schedule_simple_job(node, fencepost, "now + 1 minute"):
 		return
 
-	node.run("rm -f /tmp/fencepost")
-
-	# This is ugly. we should be able to pass strings as stdin without having
-	# to go through such contortions.
-	command = "touch /tmp/fencepost".encode('utf-8')
-
-	st = node.run("at now + 1 minute", stdin = command, timeout = 10, user = user.login)
-	if not st:
-		node.logFailure("at command failed: %s" % st.message)
-		return
-
-	if not verify_fencepost_file(node, 61):
+	# It's not entirely clear what "+ 1 minute" means for at.
+	# The current implementation will schedule the job for HH:MM:00, where
+	# MM is at least one minute from now
+	if not verify_fencepost_file(node, fencepost, 120):
 		return
 
 	node.logInfo("OKAY, this seems to work as expected")
 
 @susetest.test
 def verify_interactive(driver):
-	'''at.simple: verify at interactive mode'''
+	'''at.interactive: verify at interactive mode'''
 	node = driver.client
 
 	user = node.requireUser("test-user")
@@ -66,10 +124,11 @@ def verify_interactive(driver):
 		node.logFailure("user %s does not seem to exist" % user.login)
 		return
 
-	node.run("rm -f /tmp/fencepost")
+	fencepost = "/tmp/fencepost2"
+	node.run(f"rm -f {fencepost}")
 
 	chat_script = [
-		["at>", "touch /tmp/fencepost"],
+		["at>", f"touch {fencepost}"],
 		["at>", "\004"],
 	]
 
@@ -78,14 +137,45 @@ def verify_interactive(driver):
 		node.logFailure("at command failed: %s" % st.message)
 		return
 
-	if not verify_fencepost_file(node, 61):
+	if not verify_fencepost_file(node, fencepost, 120):
 		return
 
 	node.logInfo("OKAY, this seems to work as expected")
 
-# TBD:
-# - verify that atq can see scheduled jobs
-# - verify that atrm can cancel scheduled jobs
+@susetest.test
+def verify_simple(driver):
+	'''at.atq: verify that atq can see scheduled jobs'''
+	node = driver.client
+	fencepost = "/tmp/fencepost.atq"
+
+	jobid = at_schedule_simple_job(node, fencepost, "now + 1 minute")
+	if not jobid:
+		return
+
+	if not at_find_job(node, jobid):
+		node.logFailure(f"Cannot find at job {jobid} in atq output")
+		return
+
+	node.logInfo("OKAY, this seems to work as expected")
+
+@susetest.test
+def verify_simple(driver):
+	'''at.atrm: verify that atrm can remove scheduled jobs'''
+	node = driver.client
+	fencepost = "/tmp/fencepost.atq"
+
+	jobid = at_schedule_simple_job(node, fencepost, "now + 1 minute")
+	if not jobid:
+		return
+
+	if not at_remove_job(node, jobid):
+		return
+
+	if at_find_job(node, jobid):
+		node.logFailure(f"Job {jobid} still shows in atq output")
+		return
+
+	node.logInfo("OKAY, this seems to work as expected")
 
 # boilerplate tests
 susetest.template('selinux-verify-subsystem', 'at')
