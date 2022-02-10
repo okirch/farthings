@@ -83,11 +83,8 @@ def verify_chfn(driver):
 	]
 
 	st = node.runChatScript("chfn --room 123", chat_script, timeout = 10, user = user.login)
-	if st is None:
-		return
-
 	if not st:
-		node.logFailure("chfn command exited with error")
+		node.logFailure(f"chfn command failed: {st.message}")
 		return
 
 	pwd = getpwnam(node, user.login)
@@ -125,11 +122,8 @@ def verify_chsh(driver):
 	]
 
 	st = node.runChatScript("chsh --shell %s" % good_shell, chat_script, timeout = 10, user = user.login)
-	if st is None:
-		return
-
 	if not st:
-		node.logFailure("chsh command exited with error")
+		node.logFailure(f"chsh command failed: {st.message}")
 		return
 
 	pwd = getpwnam(node, user.login)
@@ -167,10 +161,8 @@ def verify_passwd(driver):
 	]
 
 	st = node.runChatScript("passwd", chat_script, timeout = 10, user = user.login)
-	if st is None:
-		node.logError("unable to run passwd command")
-	elif not st:
-		node.logFailure("passwd command exited with error")
+	f not st:
+		node.logFailure(f"passwd command failed: {st.message}")
 	else:
 		pass
 
