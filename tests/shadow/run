@@ -11,64 +11,53 @@ __fips_acceptable_crypt_algos = [
 	'SHA512',
 ]
 
-class PWD:
-	def __init__(self, user, passwd, uid, gid, gecos, home, shell):
-		self.pw_name = user
-		self.pw_passwd = passwd
-		self.pw_uid = uid
-		self.pw_gid = gid
-		self.pw_gecos = gecos
-		self.pw_home = home
-		self.pw_shell = shell
-
-		self.gecos_fn = None
-		self.gecos_room = None
-
-		gecos = gecos.split(',')
-		if gecos:
-			self.gecos_fullname = gecos.pop(0)
-		if gecos:
-			self.gecos_room = gecos.pop(0)
-
 def getpwnam(node, login):
 	node.logInfo("Obtaining passwd information for %s" % login)
-	status = node.run("grep '^%s:' /etc/passwd" % login, stdout = bytearray(), quiet = True)
-	if not status:
-		node.logFailure("Could not find user %s in /etc/passwd" % login)
-		return None
+	passwd = node.requireFile("system-passwd")
+	editor = passwd.createEditor()
+	editor.beginRewrite()
 
-	fields = status.stdoutString.strip().split(':')
-	return PWD(*fields)
+	pwd = editor.lookupEntry(name = login)
+	if not pwd:
+		node.logFailure("Could not find user %s in /etc/passwd" % login)
+
+	return pwd
 
 def force_shell(node, login, shell):
 	node.logInfo("Forcing %s's shell to %s" % (login, shell))
-	cmd = "sed -i '/^%s:/!b;s|:[^:]*$|:%s|' /etc/passwd" % (login, shell)
+	passwd = node.requireFile("system-passwd")
+	editor = passwd.createEditor()
+	editor.beginRewrite()
 
-	status = node.run(cmd, user = 'root', quiet = True)
-	if not status:
-		node.logInfo("sed command failed: %s" % status.message)
+	pwd = editor.lookupEntry(name = login)
+	if not pwd:
+		node.logFailure("Could not find user %s in /etc/passwd" % login)
 		return False
 
-	pwd = getpwnam(node, login)
-	if pwd.pw_shell != shell:
-		node.logInfo("force_shell: sed command succeeded, but passwd entry for %s has shell %s" % (login, pwd.pw_shell))
-		return False
+	if pwd.shell != shell:
+		node.logInfo(f"Changing shell of user {login} from {pwd.shell} to {shell}")
+		pwd.shell = shell
+		editor.addOrReplaceEntry(pwd)
+		editor.commit()
 
 	return True
 
 def force_gecos(node, login, fullname):
 	node.logInfo("Forcing %s's fullname to %s" % (login, fullname))
-	cmd = "sed -i 's|^\\(%s:[^:]*:[^:]*:[^:]*:\\)[^:]*|\\1%s|' /etc/passwd" % (login, fullname)
+	passwd = node.requireFile("system-passwd")
+	editor = passwd.createEditor()
+	editor.beginRewrite()
 
-	status = node.run(cmd, user = 'root', quiet = True)
-	if not status:
-		node.logInfo("sed command failed: %s" % status.message)
+	pwd = editor.lookupEntry(name = login)
+	if not pwd:
+		node.logFailure("Could not find user %s in /etc/passwd" % login)
 		return False
 
-	pwd = getpwnam(node, login)
-	if pwd.gecos_fullname != fullname:
-		node.logInfo("force_shell: sed command succeeded, but passwd entry for %s has fullname %s" % (login, pwd.gecos_fullname))
-		return False
+	if pwd.gecos != fullname:
+		node.logInfo(f"Changing fullname of user {login} from {pwd.gecos} to {fullname}")
+		pwd.gecos = fullname
+		editor.addOrReplaceEntry(pwd)
+		editor.commit()
 
 	return True
 
@@ -147,8 +136,8 @@ def verify_chsh(driver):
 	if not pwd:
 		return
 
-	if pwd.pw_shell != good_shell:
-		node.logFailure("Apparently, we failed to change the shell for %s (found %s instead of %s)." % (user.login, pwd.pw_shell, good_shell))
+	if pwd.shell != good_shell:
+		node.logFailure("Apparently, we failed to change the shell for %s (found %s instead of %s)." % (user.login, pwd.shell, good_shell))
 		return
 
 	node.logInfo("OK, shell was changed to %s." % good_shell)
@@ -246,7 +235,7 @@ def verify_encryption_method(driver):
 # So make sure chpasswd -c $ALGO does the right thing.
 ##################################################################
 def __verify_crypt_algo(driver, args):
-	'''chpasswd.@ARGS: check whether openssl digest @ARGS works'''
+	'''chpasswd.@ARGS: check whether crypt(3) digest @ARGS works'''
 
 	node = driver.client
 	algo = args[0]
