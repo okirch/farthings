@@ -88,7 +88,13 @@ def verify_chfn(driver):
 		["assword: ", user.password],
 	]
 
-	st = node.runChatScript("chfn --room 123", chat_script, timeout = 10, user = user.login)
+	# SLES and CentOS use different versions of chfn, and they use different cmdline
+	# options for setting the various gecos fields. The only option they share is
+	# --home-phone
+	st = node.runChatScript("chfn --home-phone 666", chat_script, timeout = 10, user = user.login)
+	if not expectation.verify(st):
+		return
+
 	if not st:
 		node.logFailure(f"chfn command failed: {st.message}")
 		return
@@ -97,11 +103,11 @@ def verify_chfn(driver):
 	if not pwd:
 		return
 
-	if pwd.gecos_room != '123':
+	if pwd.gecos_home_phone != '666':
 		node.logFailure("Apparently, we failed to change the user info for %s." % user.login)
 		return
 
-	node.logInfo("OK, GECOS field was changed to include the phone number 123")
+	node.logInfo("OK, GECOS field was changed to include the phone number 666")
 
 @susetest.test
 def verify_chsh(driver):
