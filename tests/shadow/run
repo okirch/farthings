@@ -196,36 +196,18 @@ def verify_encryption_method(driver):
 	'''shadow.encryption_method: check default encyption algorithm'''
 
 	node = driver.client
-	logindefs = node.requireFile("login.defs")
-	if not logindefs:
+	file = node.requireFile("system-login.defs")
+	if not file:
 		node.logError("File login.defs does not seem to exist")
 		return
 
-	content = node.recvbuffer(logindefs.path, user = "root", quiet = True)
-	if content is None:
-		node.logError("Unable to retrieve login.defs")
-		return
-
-	algorithm = None
-
-	content = content.decode('utf-8')
-	for line in content.split('\n'):
-		line = line.strip()
-		if line.startswith('#'):
-			continue
-		if not line:
-			continue
-
-		w = line.split(maxsplit = 1)
-		if w[0] != 'ENCRYPT_METHOD':
-			continue
-
-		algorithm = w[1].upper()
-
-	if algorithm is None:
+	reader = file.createReader()
+	entry = reader.lookupEntry(name = 'ENCRYPT_METHOD')
+	if entry is None:
 		node.logFailure(f"{logindefs.path} does not seem to define ENCRYPT_METHOD")
 		return
 
+	algorithm = entry.value
 	if algorithm not in ('DES', 'MD5', 'SHA256', 'SHA512', 'BCRYPT'):
 		node.logFailure(f"{logindefs.path} specifies unknown encryption algorithm {algorithm}")
 		return
