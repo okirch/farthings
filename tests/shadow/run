@@ -129,6 +129,12 @@ def verify_chsh(driver):
 		node.logError("Failed to change the user's shell to %s" % wrong_shell)
 		return
 
+	# The shell we're replacing may have to be in /etc/shells
+	file = node.requireFile("system-shells")
+	editor = file.createEditor()
+	editor.addOrReplaceEntry(name = wrong_shell)
+	editor.commit()
+
 	chat_script = [
 		["assword: ", user.password],
 	]
