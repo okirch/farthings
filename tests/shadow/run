@@ -14,8 +14,7 @@ __fips_acceptable_crypt_algos = [
 def getpwnam(node, login):
 	node.logInfo("Obtaining passwd information for %s" % login)
 	passwd = node.requireFile("system-passwd")
-	editor = passwd.createEditor()
-	editor.beginRewrite()
+	editor = passwd.createReader()
 
 	pwd = editor.lookupEntry(name = login)
 	if not pwd:
@@ -27,7 +26,6 @@ def force_shell(node, login, shell):
 	node.logInfo("Forcing %s's shell to %s" % (login, shell))
 	passwd = node.requireFile("system-passwd")
 	editor = passwd.createEditor()
-	editor.beginRewrite()
 
 	pwd = editor.lookupEntry(name = login)
 	if not pwd:
@@ -46,7 +44,6 @@ def force_gecos(node, login, fullname):
 	node.logInfo("Forcing %s's fullname to %s" % (login, fullname))
 	passwd = node.requireFile("system-passwd")
 	editor = passwd.createEditor()
-	editor.beginRewrite()
 
 	pwd = editor.lookupEntry(name = login)
 	if not pwd:

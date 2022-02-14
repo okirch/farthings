@@ -158,7 +158,6 @@ class SSH:
 		node.logInfo(f"{file.path}: Setting {key}={value}")
 
 		editor = file.createEditor()
-		editor.beginRewrite()
 		editor.addOrReplaceEntry(name = key, value = value)
 		editor.commit()
 
