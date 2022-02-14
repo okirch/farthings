@@ -75,6 +75,15 @@ def verify_chfn(driver):
 		node.logError("Failed to change the user's fullname")
 		return
 
+	file = node.requireFile("system-login.defs")
+	if file is None:
+		node.logError("Cannot locate login.defs")
+		return
+
+	editor = file.createEditor()
+	editor.addOrReplaceEntry(name = 'CHFN_RESTRICT', value = 'rwh')
+	editor.commit()
+
 	chat_script = [
 		["assword: ", user.password],
 	]
