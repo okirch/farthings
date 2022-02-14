@@ -84,6 +84,13 @@ def verify_chfn(driver):
 	editor.addOrReplaceEntry(name = 'CHFN_RESTRICT', value = 'rwh')
 	editor.commit()
 
+	selinux = driver.getFeature("selinux")
+	if selinux and not selinux.userCanRun("chfn"):
+		driver.logInfo("*** SELinux policy does not allow this user to run chfn; chfn should not work ***")
+		expectation = selinux.expectViolation("chfn")
+	else:
+		expectation = susetest.ExpectedCommandSuccess("chfn")
+
 	chat_script = [
 		["assword: ", user.password],
 	]
@@ -96,7 +103,7 @@ def verify_chfn(driver):
 		return
 
 	if not st:
-		node.logFailure(f"chfn command failed: {st.message}")
+		node.logInfo("OK, chfn not allowed")
 		return
 
 	pwd = getpwnam(node, user.login)
@@ -135,13 +142,23 @@ def verify_chsh(driver):
 	editor.addOrReplaceEntry(name = wrong_shell)
 	editor.commit()
 
+	selinux = driver.getFeature("selinux")
+	if selinux and not selinux.userCanRun("chsh"):
+		driver.logInfo("*** SELinux policy does not allow this user to run chsh; chsh should not work ***")
+		expectation = selinux.expectViolation("chsh")
+	else:
+		expectation = susetest.ExpectedCommandSuccess("chsh")
+
 	chat_script = [
 		["assword: ", user.password],
 	]
 
 	st = node.runChatScript("chsh --shell %s" % good_shell, chat_script, timeout = 10, user = user.login)
+	if not expectation.verify(st):
+		return
+
 	if not st:
-		node.logFailure(f"chsh command failed: {st.message}")
+		node.logInfo("OK, chsh not allowed")
 		return
 
 	pwd = getpwnam(node, user.login)
@@ -179,7 +196,7 @@ def verify_passwd(driver):
 	]
 
 	st = node.runChatScript("passwd", chat_script, timeout = 10, user = user.login)
-	f not st:
+	if not st:
 		node.logFailure(f"passwd command failed: {st.message}")
 	else:
 		pass
