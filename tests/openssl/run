@@ -20,7 +20,7 @@ __fips_disabled_ciphers = [
 ]
 
 def __verify_digest(driver, args):
-	'''@ARGS: check whether openssl digest @ARGS works'''
+	'''digest.@ARGS: check whether openssl digest @ARGS works'''
 
 	node = driver.client
 	algo = args[0]
@@ -54,7 +54,7 @@ susetest.define_parameterized(__verify_digest, "sha512")
 susetest.define_parameterized(__verify_digest, "gost")
 
 def __verify_cipher(driver, args):
-	'''local: check whether openssl cipher @ARGS works'''
+	'''cipher.@ARGS: check whether openssl cipher @ARGS works'''
 
 	node = driver.client
 	algo = args[0]
