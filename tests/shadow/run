@@ -84,26 +84,22 @@ def verify_chfn(driver):
 	editor.addOrReplaceEntry(name = 'CHFN_RESTRICT', value = 'rwh')
 	editor.commit()
 
-	selinux = driver.getFeature("selinux")
-	if selinux and not selinux.userCanRun("chfn"):
-		driver.logInfo("*** SELinux policy does not allow this user to run chfn; chfn should not work ***")
-		expectation = selinux.expectViolation("chfn")
-	else:
-		expectation = susetest.ExpectedCommandSuccess("chfn")
-
 	chat_script = [
 		["assword: ", user.password],
 	]
+
+	executable = node.requireExecutable("chfn")
+
+	# evaluate failure conditions specified for chfn (for instance, if SELinux is active,
+	# the behavior of chfn depends on the test user's SELinux user.
+	driver.predictTestResult(executable)
 
 	# SLES and CentOS use different versions of chfn, and they use different cmdline
 	# options for setting the various gecos fields. The only option they share is
 	# --home-phone
 	st = node.runChatScript("chfn --home-phone 666", chat_script, timeout = 10, user = user.login)
-	if not expectation.verify(st):
-		return
-
 	if not st:
-		node.logInfo("OK, chfn not allowed")
+		node.logFailure(f"chfn command failed: {st.message}")
 		return
 
 	pwd = getpwnam(node, user.login)
@@ -142,23 +138,19 @@ def verify_chsh(driver):
 	editor.addOrReplaceEntry(name = wrong_shell)
 	editor.commit()
 
-	selinux = driver.getFeature("selinux")
-	if selinux and not selinux.userCanRun("chsh"):
-		driver.logInfo("*** SELinux policy does not allow this user to run chsh; chsh should not work ***")
-		expectation = selinux.expectViolation("chsh")
-	else:
-		expectation = susetest.ExpectedCommandSuccess("chsh")
+	executable = node.requireExecutable("chfn")
+
+	# evaluate failure conditions specified for chfn (for instance, if SELinux is active,
+	# the behavior of chfn depends on the test user's SELinux user.
+	driver.predictTestResult(executable)
 
 	chat_script = [
 		["assword: ", user.password],
 	]
 
 	st = node.runChatScript("chsh --shell %s" % good_shell, chat_script, timeout = 10, user = user.login)
-	if not expectation.verify(st):
-		return
-
 	if not st:
-		node.logInfo("OK, chsh not allowed")
+		node.logFailure(f"chsh command failed: {st.message}")
 		return
 
 	pwd = getpwnam(node, user.login)
