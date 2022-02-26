@@ -251,22 +251,15 @@ def __verify_crypt_algo(driver, args):
 	# messed with it
 	user = node.requireUser("test-user")
 
-	expectedToFail = node.testFeature("fips") and algo not in __fips_acceptable_crypt_algos
+	# evaluate failure conditions specified for chpasswd (specifcally,
+	# for algorithms disabled by FIPS)
+	print(f"Trying to predict outcome for algo {algo}")
+	driver.predictTestResult(chpasswd, algorithm = algo)
 
 	data = f"{user.login}:{user.password}".encode('utf-8')
 	st = chpasswd.run(f"-c {algo}", stdin = data, stdout = bytearray(), quiet = True)
 	if not st:
-		if not expectedToFail:
-			node.logFailure(f"chpasswd with crypt algorithm {algo} failed unexpectedly")
-			return
-
-		node.logInfo(f"Good, {algo} is forbidden by FIPS 140-2, and chpasswd failed as expected")
-		return
-
-	if expectedToFail:
-		node.logFailure(f"{algo} is forbidden by FIPS 140-2, but chpasswd did not fail")
-		node.logInfo("Displaying user's /etc/shadow entry FYI")
-		node.run(f"grep {user.login} /etc/shadow")
+		node.logFailure(f"chpasswd with crypt algorithm {algo} failed: {st.message}")
 		return
 
 	verify = node.requireExecutable("verify_password")

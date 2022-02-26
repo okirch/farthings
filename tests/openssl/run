@@ -3,21 +3,9 @@
 # Test script for openssl command line utility. This is written primarily
 # with FIPS mode in mind.
 #
-# Copyright (C) 2021 Olaf Kirch <okir@suse.de>
+# Copyright (C) 2021, 2022 Olaf Kirch <okir@suse.de>
 
 import susetest
-
-__fips_disabled_digests = [
-	'md4',
-	'md5',
-	'mdc2',
-	'gost',
-]
-
-__fips_disabled_ciphers = [
-	'des',
-	'des-ede',
-]
 
 def __verify_digest(driver, args):
 	'''digest.@ARGS: check whether openssl digest @ARGS works'''
@@ -25,24 +13,20 @@ def __verify_digest(driver, args):
 	node = driver.client
 	algo = args[0]
 
-	expectToFail = False
-	if algo in __fips_disabled_digests and node.testFeature('fips'):
-		expectToFail = True
-
 	data = "random input".encode('utf-8')
 
 	openssl = node.requireExecutable("openssl")
+
+	# evaluate failure conditions specified for openssl (specifcally,
+	# for algorithms disabled by FIPS)
+	driver.predictTestResult(openssl, algorithm = algo)
+
 	st = openssl.run(" ".join(args), stdin = data, stdout = bytearray())
 	if not st:
-		if not expectToFail:
-			node.logFailure(f"algorithm {algo} failed unexpectedly")
-			return
-		node.logInfo(f"algorithm {algo} disabled by FIPS: good")
-	else:
-		if expectToFail:
-			node.logFailure(f"algorithm {algo} should have been disabled by FIPS mode")
-			return
-		node.logInfo(f"algorithm {algo} seems to work")
+		node.logFailure(f"algorithm {algo} failed: {st.message}")
+		return
+
+	node.logInfo(f"algorithm {algo} seems to work")
 
 susetest.define_parameterized(__verify_digest, "md4")
 susetest.define_parameterized(__verify_digest, "md5")
@@ -59,27 +43,21 @@ def __verify_cipher(driver, args):
 	node = driver.client
 	algo = args[0]
 
-	expectToFail = False
-	if algo in __fips_disabled_ciphers and node.testFeature('fips'):
-		expectToFail = True
-
 	data = "random input".encode('utf-8')
 
 	openssl = node.requireExecutable("openssl")
-	st = openssl.run(f"enc -{algo} -pbkdf2 -out encrypted.bin -pass pass:3l1t3", stdin = data, stdout = bytearray())
-	if not st:
-		if not expectToFail:
-			node.logFailure(f"algorithm {algo} failed unexpectedly")
-			return
-		node.logInfo(f"algorithm {algo} disabled by FIPS: good")
-		return
 
-	if expectToFail:
-		node.logFailure(f"algorithm {algo} should have been disabled by FIPS mode")
+	# evaluate failure conditions specified for openssl (specifcally,
+	# for algorithms disabled by FIPS)
+	driver.predictTestResult(openssl, algorithm = algo)
+
+	st = openssl.run(f"enc -{algo} -pbkdf2 -out encrypted.bin -pass pass:l33t", stdin = data, stdout = bytearray())
+	if not st:
+		node.logFailure(f"encryption algorithm {algo} failed: {st.message}")
 		return
 
 	node.logInfo(f"encryption with {algo} seems to work, now verify decryption")
-	st = openssl.run(f"enc -d -{algo} -pbkdf2 -in encrypted.bin -pass pass:3l1t3", stdout = bytearray(), quiet = True)
+	st = openssl.run(f"enc -d -{algo} -pbkdf2 -in encrypted.bin -pass pass:l33t", stdout = bytearray(), quiet = True)
 	if not st:
 		node.logFailure(f"decryption with {algo} failed")
 		return
