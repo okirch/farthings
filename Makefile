@@ -9,10 +9,10 @@ all install clean::
 	done
 
 install install-tests::
-	twopence install-testcase tests/*
+	twopence install-testcase --install-root "$(DESTDIR)" tests/*
 
 install install-suites::
-	twopence install-testsuite suites/*
+	twopence install-testsuite --install-root "$(DESTDIR)" suites/*
 
 install install-matrices::
-	twopence install-testmatrix matrices/*
+	twopence install-testmatrix --install-root "$(DESTDIR)" matrices/*
