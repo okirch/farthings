@@ -1,0 +1,16 @@
+#!/usr/bin/python3
+#
+# Dummy test case - this is mostly for testing the twopence engine itself
+#
+# Copyright (C) 202e Olaf Kirch <okir@suse.de>
+
+import susetest
+
+
+@susetest.test
+def dummy_test(driver):
+	'''dummy.success: this test always succeeds'''
+	return
+
+if __name__ == '__main__':
+	susetest.perform()
