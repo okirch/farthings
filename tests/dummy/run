@@ -2,7 +2,7 @@
 #
 # Dummy test case - this is mostly for testing the twopence engine itself
 #
-# Copyright (C) 202e Olaf Kirch <okir@suse.de>
+# Copyright (C) 2022 Olaf Kirch <okir@suse.de>
 
 import susetest
 
