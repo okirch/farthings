@@ -255,12 +255,13 @@ def ntp_keys_permission(driver):
 	if not st:
 		return
 
+	# FIXME: this should be part of the resource definition, too
 	permissions = st.stdoutString.strip()
 	if permissions != "600":
 		driver.server.logFailure("%s has unexpected permissions 0%s (expected 0600)" % (
 				key_file.path, permissions))
 		driver.server.logInfo("Trying to fix permissions")
-		driver.server.run("chmod 644 %s" % key_file.path)
+		driver.server.run("chmod 600 %s" % key_file.path)
 		return
 
 	driver.server.logInfo("NTP keyfile has proper permissions")
@@ -381,6 +382,7 @@ def ntp_use_keyed_communication(driver):
 
 # boilerplate tests
 susetest.template('selinux-verify-subsystem', 'ntp', nodeName = 'server')
+susetest.template('verify-file', 'ntp_keys', nodeName = 'server')
 
 if __name__ == '__main__':
 	susetest.perform()
