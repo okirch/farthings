@@ -234,6 +234,8 @@ def verify_encryption_method(driver):
 # with a bad algorithm. However, we should probably make sure we
 # do not accept bad algorithms when setting passwords...
 # So make sure chpasswd -c $ALGO does the right thing.
+#
+# Note: verify_password is provided by farthings.
 ##################################################################
 def __verify_crypt_algo(driver, args):
 	'''chpasswd.@ARGS: check whether crypt(3) digest @ARGS works'''
@@ -282,6 +284,10 @@ susetest.template('selinux-verify-executable', 'passwd')
 susetest.template('selinux-verify-executable', 'chsh')
 susetest.template('selinux-verify-executable', 'chfn')
 
+# susetest.template('verify-subsystem', 'shadow')
+susetest.template('verify-file', 'system-shadow')
+susetest.template('verify-file', 'system-passwd')
+susetest.template('verify-file', 'system-group')
 
 if __name__ == '__main__':
 	susetest.perform()
