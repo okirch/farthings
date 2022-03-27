@@ -16,3 +16,7 @@ install install-suites::
 
 install install-matrices::
 	twopence install-testmatrix --install-root "$(DESTDIR)" matrices/*
+
+install install-lib::
+	twopence install-lib --install-root "$(DESTDIR)" --destination-subdir farthings lib/*
+
