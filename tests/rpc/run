@@ -73,13 +73,13 @@ def setup(driver):
 def rpc_run_rpcinfo_root(driver):
 	'''rpcinfo-root: check that root can run rpcinfo'''
 
-	rpcinfo.runOrFail("-p %s" % driver.server.ipv4_addr, user = "root")
+	rpcinfo.runOrFail("-p %s" % driver.server.ipv4_address, user = "root")
 
 @susetest.test
 def rpc_run_rpcinfo_user(driver):
 	'''rpcinfo-user: check that test user can run rpcinfo'''
 
-	rpcinfo.runOrFail("-p %s" % driver.server.ipv4_addr)
+	rpcinfo.runOrFail("-p %s" % driver.server.ipv4_address)
 
 @susetest.test
 def rpc_check_rpcbind_user(driver):

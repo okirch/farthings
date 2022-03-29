@@ -20,3 +20,5 @@ install install-matrices::
 install install-lib::
 	twopence install-lib --install-root "$(DESTDIR)" --destination-subdir farthings lib/*
 
+install install-applications::
+	twopence install-lib --install-root "$(DESTDIR)" --destination-subdir farthings/application applications/*
