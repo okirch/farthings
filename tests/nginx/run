@@ -1,0 +1,117 @@
+#!/usr/bin/python3
+#
+# Copyright (C) 2022 Olaf Kirch <okir@suse.de>
+
+import susetest
+
+susetest.enable_libdir()
+
+from farthings.openssl_pki import PKI
+import twopence
+
+susetest.requireResource("ipv4_address")
+susetest.optionalResource("ipv6_address")
+susetest.requireExecutable('wget', nodeName = 'client')
+
+welcomeMessage = "Welcome, stranger!"
+
+@susetest.test
+def createHTTPS(driver):
+	'''enable-https: enable HTTPS'''
+	node = driver.server
+	client = driver.client
+
+	app = driver.server.managers.nginx
+
+	for server in app.config.matchHttpServers():
+		susetest.say(f"The server listening on port {server.port} uses server_name \"{server.fqdn}\"")
+
+		if server.fqdn != node.fqdn:
+			print(f"Changing hostname from {server.fqdn} to {node.fqdn}")
+			server.fqdn = node.fqdn
+
+	server = app.createServer(hostname = node.fqdn, ssl = True)
+
+	if not app.config.commit():
+		node.logFailure("Unable to save nginx.conf")
+		return False
+
+	caCertBlob = app.CA.cert.blob
+
+	node.logInfo("Installing CA certificate and making it trusted")
+	if not client.managers.trust_manager.addTrustedCertificate("fancyCA.pem", caCertBlob):
+		return
+
+	if not app.uploadIndexFile(welcomeMessage):
+		return False
+
+	node.logInfo("Trying to reload nginx service")
+	if not app.reload():
+		node.logFailure("Unable to reload nginx service")
+		return
+
+	# FIXME: don't be faster than the service can restart.
+	# We should really insert a delay or some sort of poll here,
+	# so that we wait until the server has re-opened all ports.
+
+def wgetTest(node, url):
+	user = node.requireUser("test-user")
+	if user is None:
+		node.logFailure("Cannot get test user")
+		return
+
+	res = node.requireExecutable("wget")
+	if res is None:
+		node.logFailure("Cannot get executable wget")
+		return
+	
+	st = res.run(f"-O output.html {url}", user = user.login)
+	if not st:
+		node.logFailure(f"wget {url} failed: {st.message}")
+		return
+
+	data = node.recvbuffer("output.html", user = user.login, quiet = True)
+	if not data:
+		node.logFailure("wget did not write to output.html as instructed")
+		return
+
+	message = data.decode('utf-8').strip()
+	if message != welcomeMessage:
+		node.logFailure(f"unexpected data in index.hmtl; expected \"{welcomeMessage}\" but received \"{message}\"")
+		return
+	
+	node.logInfo(f"index.html contains the expected message \"{welcomeMessage}\"")
+	node.run("rm -f output.html", user = user.login, quiet = True)
+
+	susetest.say("Things looking good")
+
+
+def tryPort(driver, port):
+	app = driver.server.managers.nginx
+
+	tried = False
+	for url in app.serverUrls(port = port):
+		wgetTest(driver.client, url)
+		tried = True
+	
+	if not tried:
+		driver.skipTest()
+
+@susetest.test
+def checkHTTP(driver):
+	'''check-http: verify that client can connect to port 80'''
+	tryPort(driver, 80)
+
+@susetest.test
+def checkHTTPS(driver):
+	'''check-https: verify that client can connect to port 443'''
+	tryPort(driver, 443)
+
+@susetest.test
+def checkHTTPS(driver):
+	'''check-https: verify that client can connect to port 666'''
+	tryPort(driver, 666)
+
+if __name__ == '__main__':
+	susetest.perform()
+
