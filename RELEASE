@@ -8,5 +8,5 @@
 # If we ever bump the major version number, more manual work is
 # required.
 #
-VERSION=0.2.1
-DATE="February 8, 2022"
+VERSION=0.3
+DATE="March 30, 2022"
